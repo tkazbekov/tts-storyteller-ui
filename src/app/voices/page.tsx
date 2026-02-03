@@ -2,15 +2,7 @@ import Link from "next/link";
 import { listVoices } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { DeleteVoiceButton } from "@/components/delete-voice-button";
+import { VoicesTable } from "@/components/voices-table";
 
 export const dynamic = "force-dynamic";
 
@@ -60,33 +52,7 @@ export default async function VoicesPage() {
             <CardTitle>Available voices</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Language</TableHead>
-                  <TableHead className="w-[140px] text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {voices.map((v) => (
-                  <TableRow key={v.id}>
-                    <TableCell className="font-medium">{v.id}</TableCell>
-                    <TableCell>{v.language}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button variant="outline" size="sm" asChild>
-                          <Link href={`/voices/${encodeURIComponent(v.id)}/edit`}>
-                            Edit
-                          </Link>
-                        </Button>
-                        <DeleteVoiceButton voiceId={v.id} size="sm" />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <VoicesTable voices={voices} />
           </CardContent>
         </Card>
       )}

@@ -12,6 +12,7 @@ import {
   listStoryAudioFiles,
   getStoryAudioFileUrl,
 } from "@/lib/api";
+import { AudioPlayerWithDownload } from "@/components/audio-player-with-download";
 import type { ResolvedLine } from "@/lib/api-types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +41,21 @@ export function StoryActions({ storyId }: Props) {
   const [generating, setGenerating] = useState(false);
   const [audioFiles, setAudioFiles] = useState<string[]>([]);
   const [hasFullAudio, setHasFullAudio] = useState(false);
+
+  // On load, detect if this story already has generated audio
+  useEffect(() => {
+    let cancelled = false;
+    listStoryAudioFiles(storyId)
+      .then((files) => {
+        if (cancelled) return;
+        setAudioFiles(files);
+        setHasFullAudio(files.includes("story_full.wav"));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [storyId]);
 
   // If there is already an active job for this story, show it and poll
   useEffect(() => {
@@ -239,10 +255,10 @@ export function StoryActions({ storyId }: Props) {
             {hasFullAudio && (
               <div className="space-y-2">
                 <p className="text-sm font-medium">Full story</p>
-                <audio
-                  controls
+                <AudioPlayerWithDownload
                   src={getStoryFullAudioUrl(storyId)}
-                  className="w-full max-w-md"
+                  downloadFilename={`${storyId}_full.wav`}
+                  downloadLabel="Download full"
                 />
               </div>
             )}
@@ -251,14 +267,15 @@ export function StoryActions({ storyId }: Props) {
                 <p className="text-sm font-medium">By file</p>
                 <ul className="space-y-2">
                   {audioFiles.map((filename) => (
-                    <li key={filename} className="flex items-center gap-2">
-                      <span className="text-muted-foreground text-sm w-40 truncate">
+                    <li key={filename} className="flex flex-wrap items-center gap-2">
+                      <span className="text-muted-foreground text-sm w-40 shrink-0 truncate">
                         {filename}
                       </span>
-                      <audio
-                        controls
+                      <AudioPlayerWithDownload
                         src={getStoryAudioFileUrl(storyId, filename)}
-                        className="flex-1 max-w-md h-8"
+                        downloadFilename={filename}
+                        downloadLabel="Download"
+                        className="flex-1 min-w-0"
                       />
                     </li>
                   ))}

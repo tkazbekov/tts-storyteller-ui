@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getVoice } from "@/lib/api";
 import { VoiceForm } from "@/components/voice-form";
+import { VoiceSampleCard } from "@/components/voice-sample-card";
 import { DeleteVoiceButton } from "@/components/delete-voice-button";
 import { Button } from "@/components/ui/button";
 
@@ -29,6 +30,8 @@ export default async function EditVoicePage({ params }: Props) {
       </div>
 
       <VoiceForm initialVoice={voice} voiceId={voiceId} />
+
+      <VoiceSampleCard voiceId={voiceId} hasAudio={!!voice.refAudioPath} />
     </div>
   );
 }

@@ -129,6 +129,11 @@ export function getStoryAudioFileUrl(storyId: string, filename: string): string 
   return `${base.replace(/\/$/, "")}/audio/stories/${encodeURIComponent(storyId)}/files/${encodeURIComponent(filename)}`;
 }
 
+export function getVoiceSampleAudioUrl(voiceId: string): string {
+  const base = getBase();
+  return `${base.replace(/\/$/, "")}/audio/voices/${encodeURIComponent(voiceId)}.wav`;
+}
+
 // --- Voices ---
 
 export async function listVoices(pool?: string): Promise<Voice[]> {
