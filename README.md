@@ -1,4 +1,10 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app). It is the frontend for the [qwen3-tts](https://github.com/) API (multi-voice story generation).
+
+## Configuration
+
+Copy `.env.example` to `.env.local` and set the API base URL if needed:
+
+- `NEXT_PUBLIC_API_URL` – base URL of the qwen3-tts API (default: `http://localhost:8000`). If unset, the app uses the `/api` rewrite to proxy to `http://localhost:8000`.
 
 ## Getting Started
 
