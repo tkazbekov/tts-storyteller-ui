@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "@/components/providers";
+import { JobsNavLink } from "@/components/jobs-nav-link";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -41,6 +42,7 @@ export default function RootLayout({
               <Link href="/voices" className="text-muted-foreground hover:text-foreground text-sm">
                 Voices
               </Link>
+              <JobsNavLink />
             </nav>
           </header>
           <main className="container mx-auto px-4 py-6">{children}</main>

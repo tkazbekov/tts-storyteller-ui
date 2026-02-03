@@ -6,21 +6,30 @@ Copy `.env.example` to `.env.local` and set the API base URL if needed:
 
 - `NEXT_PUBLIC_API_URL` – base URL of the qwen3-tts API (default: `http://localhost:8000`). If unset, the app uses the `/api` rewrite to proxy to `http://localhost:8000`.
 
-## Getting Started
+## Running for development
 
-First, run the development server:
+The UI talks to the **qwen3-tts API** at `http://localhost:8000`. You need both running.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+**Option A – Two terminals**
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. **API** (in the `qwen3-tts` repo):
+   ```bash
+   cd /path/to/qwen3-tts
+   source env.sh
+   make run-api
+   ```
+2. **Frontend** (in this repo):
+   ```bash
+   npm run dev
+   ```
+
+**Option B – One command** (if `qwen3-tts` is a sibling directory of `storymaker-ui`):
+   ```bash
+   npm run dev:all
+   ```
+   This starts the API and Next together (requires `concurrently`).
+
+Then open [http://localhost:3000](http://localhost:3000). The API runs at [http://localhost:8000](http://localhost:8000).
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

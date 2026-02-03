@@ -10,6 +10,7 @@ import type {
   StorySummary,
   StoryTemplate,
   Voice,
+  VoiceConfig,
 } from "./api-types";
 
 export type { ApiErrorDetail } from "./api-types";
@@ -86,9 +87,11 @@ export async function renderStory(storyId: string): Promise<ResolvedLine[]> {
 
 export async function generateStory(
   storyId: string,
-  body?: GenerateRequest
+  body?: GenerateRequest,
+  options?: { cancelExisting?: boolean }
 ): Promise<Job> {
-  return request<Job>(`/stories/${encodeURIComponent(storyId)}/generate`, {
+  const qs = options?.cancelExisting ? "?cancel_existing=true" : "";
+  return request<Job>(`/stories/${encodeURIComponent(storyId)}/generate${qs}`, {
     method: "POST",
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -96,8 +99,18 @@ export async function generateStory(
 
 // --- Jobs ---
 
+export async function listActiveJobs(): Promise<Job[]> {
+  return request<Job[]>("/jobs");
+}
+
 export async function getJob(jobId: string): Promise<Job> {
   return request<Job>(`/jobs/${encodeURIComponent(jobId)}`);
+}
+
+export async function cancelJob(jobId: string): Promise<Job> {
+  return request<Job>(`/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST",
+  });
 }
 
 // --- Audio ---
@@ -125,4 +138,27 @@ export async function listVoices(pool?: string): Promise<Voice[]> {
 
 export async function getVoice(voiceId: string): Promise<Voice> {
   return request<Voice>(`/voices/${encodeURIComponent(voiceId)}`);
+}
+
+export async function createVoice(config: VoiceConfig): Promise<Job> {
+  return request<Job>("/voices", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
+export async function updateVoice(
+  voiceId: string,
+  config: VoiceConfig
+): Promise<Job | Voice> {
+  return request<Job | Voice>(`/voices/${encodeURIComponent(voiceId)}`, {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+}
+
+export async function deleteVoice(voiceId: string): Promise<void> {
+  return request<void>(`/voices/${encodeURIComponent(voiceId)}`, {
+    method: "DELETE",
+  });
 }

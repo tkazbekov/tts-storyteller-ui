@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listVoices } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -9,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DeleteVoiceButton } from "@/components/delete-voice-button";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +27,14 @@ export default async function VoicesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Voices</h1>
-        <Link href="/" className="text-muted-foreground text-sm hover:text-foreground">
-          ← Stories
-        </Link>
+        <div className="flex items-center gap-2">
+          <Button asChild>
+            <Link href="/voices/new">New voice</Link>
+          </Button>
+          <Link href="/" className="text-muted-foreground text-sm hover:text-foreground">
+            ← Stories
+          </Link>
+        </div>
       </div>
 
       {error && (
@@ -38,8 +45,11 @@ export default async function VoicesPage() {
 
       {!error && voices.length === 0 && (
         <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            No voices found. Create voices via the API or CLI to use them in stories.
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+            <p>No voices found.</p>
+            <Button asChild variant="outline" className="mt-4">
+              <Link href="/voices/new">Create your first voice</Link>
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -55,7 +65,7 @@ export default async function VoicesPage() {
                 <TableRow>
                   <TableHead>ID</TableHead>
                   <TableHead>Language</TableHead>
-                  <TableHead>Instruction</TableHead>
+                  <TableHead className="w-[140px] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -63,8 +73,15 @@ export default async function VoicesPage() {
                   <TableRow key={v.id}>
                     <TableCell className="font-medium">{v.id}</TableCell>
                     <TableCell>{v.language}</TableCell>
-                    <TableCell className="max-w-md truncate text-muted-foreground">
-                      {v.instruction}
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/voices/${encodeURIComponent(v.id)}/edit`}>
+                            Edit
+                          </Link>
+                        </Button>
+                        <DeleteVoiceButton voiceId={v.id} size="sm" />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

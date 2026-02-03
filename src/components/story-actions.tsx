@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   renderStory,
   generateStory,
   getJob,
+  listActiveJobs,
   getStoryFullAudioUrl,
   listStoryAudioFiles,
   getStoryAudioFileUrl,
@@ -38,6 +40,55 @@ export function StoryActions({ storyId }: Props) {
   const [generating, setGenerating] = useState(false);
   const [audioFiles, setAudioFiles] = useState<string[]>([]);
   const [hasFullAudio, setHasFullAudio] = useState(false);
+
+  // If there is already an active job for this story, show it and poll
+  useEffect(() => {
+    let cancelled = false;
+    listActiveJobs()
+      .then((list) => {
+        if (cancelled) return;
+        const existing = list.find(
+          (j) => j.type === "generate" && j.storyId === storyId && (j.status === "queued" || j.status === "running")
+        );
+        if (!existing) return;
+        setJobId(existing.id);
+        setJobStatus(existing.status);
+        setJobMessage(existing.message ?? null);
+        setGenerating(true);
+        const poll = async (jobIdToPoll: string) => {
+          if (cancelled) return;
+          try {
+            const j = await getJob(jobIdToPoll);
+            if (cancelled) return;
+            setJobStatus(j.status);
+            setJobMessage(j.message ?? null);
+            if (j.status === "succeeded") {
+              setHasFullAudio(true);
+              try {
+                const files = await listStoryAudioFiles(storyId);
+                setAudioFiles(files);
+              } catch {
+                // ignore
+              }
+              setGenerating(false);
+              return;
+            }
+            if (j.status === "failed") {
+              setGenerating(false);
+              return;
+            }
+            setTimeout(() => poll(jobIdToPoll), POLL_INTERVAL_MS);
+          } catch {
+            if (!cancelled) setGenerating(false);
+          }
+        };
+        setTimeout(() => poll(existing.id), POLL_INTERVAL_MS);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [storyId]);
 
   const handlePreview = async () => {
     setLoadingPreview(true);
@@ -95,8 +146,11 @@ export function StoryActions({ storyId }: Props) {
       setTimeout(() => poll(job.id), POLL_INTERVAL_MS);
     } catch (err) {
       const e = err as Error & { status?: number };
-      if (e.status === 409) toast.error("A job is already running for this story.");
-      else toast.error(e.message ?? "Start generation failed");
+      if (e.status === 409) {
+        toast.error("A job is already running for this story. Manage or cancel it from Jobs.");
+      } else {
+        toast.error(e.message ?? "Start generation failed");
+      }
       setGenerating(false);
     }
   };
@@ -161,8 +215,14 @@ export function StoryActions({ storyId }: Props) {
         {(jobStatus || jobMessage) && (
           <CardContent className="space-y-2">
             {jobStatus && (
-              <p>
-                Status: <Badge>{jobStatus}</Badge>
+              <p className="flex items-center gap-2">
+                <span>Status: <Badge>{jobStatus}</Badge></span>
+                <Link
+                  href="/jobs"
+                  className="text-muted-foreground text-sm hover:text-foreground underline"
+                >
+                  Manage in Jobs
+                </Link>
               </p>
             )}
             {jobMessage && <p className="text-muted-foreground text-sm">{jobMessage}</p>}
