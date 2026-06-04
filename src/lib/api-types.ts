@@ -1,4 +1,6 @@
-/** TypeScript types mirroring qwen3-tts API (lib/models.py). */
+/** TypeScript types mirroring the TTS Storyteller API (lib/models.py). */
+
+export type TtsBackend = "qwen" | "vibevoice";
 
 export interface Role {
   roleId: number;
@@ -45,6 +47,7 @@ export interface Voice {
   language: string;
   instruction: string;
   sample_text: string | null;
+  backend: TtsBackend;
   promptPath: string | null;
   refAudioPath: string | null;
 }
@@ -54,6 +57,16 @@ export interface VoiceConfig {
   language: string;
   instruction: string;
   sample_text: string;
+  backend: "qwen";
+}
+
+export interface VoiceCloneConfig {
+  id: string;
+  language: string;
+  instruction: string;
+  ref_audio_url: string;
+  ref_text?: string | null;
+  backend: TtsBackend;
 }
 
 export interface VoicePool {
@@ -78,6 +91,12 @@ export interface Job {
   startedAt: string | null;
   finishedAt: string | null;
   requestParams: Record<string, unknown> | null;
+}
+
+export interface UploadResponse {
+  file_path: string;
+  filename: string;
+  original_filename: string;
 }
 
 /** API 4xx/5xx error detail (FastAPI sends { detail: string | { errors: ... } }). */

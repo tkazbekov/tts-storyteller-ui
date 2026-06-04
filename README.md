@@ -1,51 +1,138 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app). It is the frontend for the [qwen3-tts](https://github.com/) API (multi-voice story generation).
+# TTS Storyteller UI
+
+Browser UI for [TTS Storyteller](https://github.com/tkazbekov/tts-storyteller), a local multi-backend text-to-speech API for generating multi-voice stories.
+
+This is a companion Next.js app for managing stories, voices, background jobs, and generated audio. It is not an official Qwen or VibeVoice project.
+
+## Features
+
+- Browse, create, and edit story templates.
+- Assign voices through story defaults, role casting, and per-line actor overrides.
+- Preview resolved story-to-voice assignments before generation.
+- Start story audio generation and monitor queued/running jobs.
+- Play and download generated full-story and per-file audio.
+- Browse, create, edit, and delete voices.
+- Create Qwen voice-design voices from text prompts.
+- Create cloned voices from uploaded reference audio for Qwen or VibeVoice.
+
+Status: usable local companion UI, still early. Qwen is the main tested backend path. VibeVoice clone support follows the current TTS Storyteller API but should be treated as experimental until verified end-to-end on your GPU.
+
+## Requirements
+
+- Node.js 24+ recommended
+- npm 11+
+- A running TTS Storyteller API, usually at `http://localhost:8000`
+
+Start the backend first:
+
+```bash
+git clone https://github.com/tkazbekov/tts-storyteller.git
+cd tts-storyteller
+./scripts/start.sh --backend qwen
+```
+
+For VibeVoice dependencies/models:
+
+```bash
+./scripts/start.sh --backend vibevoice
+# or
+./scripts/start.sh --backend all
+```
+
+The backend exposes Swagger docs at:
+
+```text
+http://localhost:8000/docs
+```
 
 ## Configuration
 
-Copy `.env.example` to `.env.local` and set the API base URL if needed:
+Copy the example environment file if you want the UI to call a non-default API URL:
 
-- `NEXT_PUBLIC_API_URL` – base URL of the qwen3-tts API (default: `http://localhost:8000`). If unset, the app uses the `/api` rewrite to proxy to `http://localhost:8000`.
+```bash
+cp .env.example .env.local
+```
 
-## Running for development
+Environment variables:
 
-The UI talks to the **qwen3-tts API** at `http://localhost:8000`. You need both running.
+- `NEXT_PUBLIC_API_URL` - base URL of the TTS Storyteller API. If unset in the browser, the app uses the local `/api` rewrite, which proxies to `http://localhost:8000` during development.
 
-**Option A – Two terminals**
+Example:
 
-1. **API** (in the `qwen3-tts` repo):
-   ```bash
-   cd /path/to/qwen3-tts
-   source env.sh
-   make run-api
-   ```
-2. **Frontend** (in this repo):
-   ```bash
-   npm run dev
-   ```
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
 
-**Option B – One command** (if `qwen3-tts` is a sibling directory of `storymaker-ui`):
-   ```bash
-   npm run dev:all
-   ```
-   This starts the API and Next together (requires `concurrently`).
+## Development
 
-Then open [http://localhost:3000](http://localhost:3000). The API runs at [http://localhost:8000](http://localhost:8000).
+Install dependencies and start the UI:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open:
 
-## Learn More
+```text
+http://localhost:3000
+```
 
-To learn more about Next.js, take a look at the following resources:
+Run quality checks:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run lint
+npm run build
+npm audit --omit=dev --audit-level=high
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Typical workflow
 
-## Deploy on Vercel
+1. Start the backend with `./scripts/start.sh` from the `tts-storyteller` repo.
+2. Start this UI with `npm run dev`.
+3. Create or import voices:
+   - **Voice design** uses `POST /voices` and is Qwen-only.
+   - **Voice clone** uploads reference audio with `POST /audio/upload`, then creates a voice with `POST /voices/clone`. It supports Qwen and VibeVoice.
+4. Create a story and assign voices.
+5. Use **Preview voices** to verify resolution.
+6. Use **Generate** to enqueue audio generation.
+7. Monitor progress from **Jobs**.
+8. Play or download generated audio from the story page.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Backend compatibility
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This UI is aligned with the current TTS Storyteller API routes:
+
+- `GET /health`
+- `GET/POST /stories`
+- `GET/PUT /stories/{storyId}`
+- `POST /stories/{storyId}/render`
+- `POST /stories/{storyId}/generate`
+- `GET /jobs`
+- `GET /jobs/{jobId}`
+- `POST /jobs/{jobId}/cancel`
+- `GET/POST /voices`
+- `POST /voices/clone`
+- `GET/PUT/DELETE /voices/{voiceId}`
+- `GET /voices/pools`
+- `POST /audio/upload`
+- `GET /audio/voices/{voiceId}.wav`
+- `GET /audio/stories/{storyId}/full.wav`
+- `GET /audio/stories/{storyId}/files`
+- `GET /audio/stories/{storyId}/files/{filename}`
+
+## Repository layout
+
+```text
+src/app/             Next.js App Router pages
+src/components/      UI components and client-side forms/actions
+src/components/ui/   shadcn-style primitives
+src/lib/api.ts       TTS Storyteller API client
+src/lib/api-types.ts TypeScript mirrors of API models
+```
+
+## License
+
+MIT. See `LICENSE`.
+
+Third-party models and packages used by the backend are governed by their own licenses and terms. This UI does not redistribute model weights.

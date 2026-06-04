@@ -9,7 +9,6 @@ import type { Voice } from "@/lib/api-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -71,6 +70,9 @@ export function StoryForm({ initialStory, storyId }: Props) {
   };
 
   const updateRole = (index: number, field: keyof Role, value: string | number | null) => {
+    const previousRoleId = roles[index]?.roleId;
+    const nextRoleId = field === "roleId" ? Number(value) : null;
+
     setRoles((prev) => {
       const next = [...prev];
       const r = { ...next[index], [field]: value };
@@ -80,19 +82,43 @@ export function StoryForm({ initialStory, storyId }: Props) {
       next[index] = r;
       return next;
     });
+
+    if (
+      field === "roleId" &&
+      previousRoleId !== undefined &&
+      typeof nextRoleId === "number" &&
+      Number.isInteger(nextRoleId) &&
+      nextRoleId >= 0 &&
+      previousRoleId !== nextRoleId
+    ) {
+      setCasting((prev) => {
+        const oldKey = String(previousRoleId);
+        const newKey = String(nextRoleId);
+        if (!(oldKey in prev)) return prev;
+        const next = { ...prev, [newKey]: prev[oldKey] };
+        delete next[oldKey];
+        return next;
+      });
+      setLines((prev) =>
+        prev.map((l) => (l.roleId === previousRoleId ? { ...l, roleId: nextRoleId } : l))
+      );
+    }
   };
 
   const removeRole = (index: number) => {
     if (roles.length <= 1) return;
     const roleId = roles[index].roleId;
-    setRoles((prev) => prev.filter((_, i) => i !== index));
+    const remainingRoles = roles.filter((_, i) => i !== index);
+    const fallbackRoleId = remainingRoles[0]?.roleId ?? 0;
+
+    setRoles(remainingRoles);
     setCasting((prev) => {
       const next = { ...prev };
       delete next[String(roleId)];
       return next;
     });
     setLines((prev) =>
-      prev.map((l) => (l.roleId === roleId ? { ...l, roleId: roles[0].roleId } : l))
+      prev.map((l) => (l.roleId === roleId ? { ...l, roleId: fallbackRoleId } : l))
     );
   };
 
@@ -144,21 +170,42 @@ export function StoryForm({ initialStory, storyId }: Props) {
       toast.error("Please select a default voice");
       return;
     }
-    const roleNames = roles.map((r) => r.name.trim()).filter(Boolean);
-    if (roleNames.length === 0) {
+    const validRoles = roles
+      .map((r) => ({ ...r, name: r.name.trim(), notes: r.notes || null }))
+      .filter((r) => r.name.length > 0);
+    if (validRoles.length === 0) {
       toast.error("At least one role with a name is required");
       return;
     }
-    const validRoles = roles
-      .map((r, i) => ({ ...r, name: r.name.trim() || `Role ${i}`, notes: r.notes || null }))
-      .filter((_, i) => roleNames[i] !== undefined);
-    const validLines = lines
-      .map((l) => ({ ...l, line: l.line.trim() || ".", extra: l.extra || null, actorId: l.actorId || null }))
-      .filter((l) => l.line.length > 0);
-    if (validLines.length === 0) {
-      toast.error("At least one line is required");
+    if (new Set(validRoles.map((r) => r.roleId)).size !== validRoles.length) {
+      toast.error("Role IDs must be unique");
       return;
     }
+
+    const validLines = lines.map((l) => ({
+      ...l,
+      line: l.line.trim(),
+      extra: l.extra || null,
+      actorId: l.actorId || null,
+    }));
+    if (validLines.length === 0 || validLines.some((l) => l.line.length === 0)) {
+      toast.error("Each line needs text. Remove blank lines instead of saving them.");
+      return;
+    }
+    if (new Set(validLines.map((l) => l.id)).size !== validLines.length) {
+      toast.error("Line IDs must be unique");
+      return;
+    }
+    const validRoleIds = new Set(validRoles.map((r) => r.roleId));
+    if (validLines.some((l) => !validRoleIds.has(l.roleId))) {
+      toast.error("Every line must reference an existing role");
+      return;
+    }
+    const cleanedCasting = Object.fromEntries(
+      Object.entries(casting).filter(([roleId, voiceId]) =>
+        validRoleIds.has(Number(roleId)) && voiceId.trim().length > 0
+      )
+    );
 
     setSubmitting(true);
     try {
@@ -170,7 +217,7 @@ export function StoryForm({ initialStory, storyId }: Props) {
         language: language.trim() || "English",
         defaultVoiceId: defaultVoiceId || (voices[0]?.id ?? ""),
         roles: validRoles,
-        casting: Object.keys(casting).length ? casting : null,
+        casting: Object.keys(cleanedCasting).length ? cleanedCasting : null,
         lines: validLines,
       };
 

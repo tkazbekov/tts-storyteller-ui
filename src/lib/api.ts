@@ -1,6 +1,6 @@
 /**
- * API client for qwen3-tts backend.
- * Uses NEXT_PUBLIC_API_URL (default http://localhost:8000) or relative /api if rewrites are used.
+ * API client for the TTS Storyteller backend.
+ * Uses NEXT_PUBLIC_API_URL or relative /api when Next rewrites are enabled.
  */
 
 import type {
@@ -9,7 +9,9 @@ import type {
   ResolvedLine,
   StorySummary,
   StoryTemplate,
+  UploadResponse,
   Voice,
+  VoiceCloneConfig,
   VoiceConfig,
 } from "./api-types";
 
@@ -24,13 +26,16 @@ function getBase(): string {
   return base || "/api";
 }
 
+function buildUrl(path: string): string {
+  const base = getBase();
+  return path.startsWith("http") ? path : `${base.replace(/\/$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const base = getBase();
-  const url = path.startsWith("http") ? path : `${base.replace(/\/$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
-  const res = await fetch(url, {
+  const res = await fetch(buildUrl(path), {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -52,6 +57,23 @@ async function request<T>(
     throw err;
   }
   if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+async function requestUpload<T>(path: string, formData: FormData): Promise<T> {
+  const res = await fetch(buildUrl(path), {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const detail = body?.detail;
+    const message = typeof detail === "string" ? detail : res.statusText;
+    const err = new Error(message) as Error & { status: number; detail: unknown };
+    err.status = res.status;
+    err.detail = detail;
+    throw err;
+  }
   return res.json() as Promise<T>;
 }
 
@@ -116,8 +138,7 @@ export async function cancelJob(jobId: string): Promise<Job> {
 // --- Audio ---
 
 export function getStoryFullAudioUrl(storyId: string): string {
-  const base = getBase();
-  return `${base.replace(/\/$/, "")}/audio/stories/${encodeURIComponent(storyId)}/full.wav`;
+  return `${getBase().replace(/\/$/, "")}/audio/stories/${encodeURIComponent(storyId)}/full.wav`;
 }
 
 export async function listStoryAudioFiles(storyId: string): Promise<string[]> {
@@ -125,13 +146,17 @@ export async function listStoryAudioFiles(storyId: string): Promise<string[]> {
 }
 
 export function getStoryAudioFileUrl(storyId: string, filename: string): string {
-  const base = getBase();
-  return `${base.replace(/\/$/, "")}/audio/stories/${encodeURIComponent(storyId)}/files/${encodeURIComponent(filename)}`;
+  return `${getBase().replace(/\/$/, "")}/audio/stories/${encodeURIComponent(storyId)}/files/${encodeURIComponent(filename)}`;
 }
 
 export function getVoiceSampleAudioUrl(voiceId: string): string {
-  const base = getBase();
-  return `${base.replace(/\/$/, "")}/audio/voices/${encodeURIComponent(voiceId)}.wav`;
+  return `${getBase().replace(/\/$/, "")}/audio/voices/${encodeURIComponent(voiceId)}.wav`;
+}
+
+export async function uploadReferenceAudio(file: File): Promise<UploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return requestUpload<UploadResponse>("/audio/upload", formData);
 }
 
 // --- Voices ---
@@ -147,6 +172,13 @@ export async function getVoice(voiceId: string): Promise<Voice> {
 
 export async function createVoice(config: VoiceConfig): Promise<Job> {
   return request<Job>("/voices", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
+export async function cloneVoice(config: VoiceCloneConfig): Promise<Job> {
+  return request<Job>("/voices/clone", {
     method: "POST",
     body: JSON.stringify(config),
   });

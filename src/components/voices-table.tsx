@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DeleteVoiceButton } from "@/components/delete-voice-button";
 import { VoiceAudioCell } from "@/components/voice-audio-cell";
@@ -34,9 +34,8 @@ export function VoicesTable({ voices }: Props) {
           {voices.map((v) => {
             const isExpanded = expandedId === v.id;
             return (
-              <>
+              <Fragment key={v.id}>
                 <tr
-                  key={v.id}
                   className={cn(
                     "cursor-pointer select-none border-b transition-colors hover:bg-muted/50",
                     isExpanded && "bg-muted/50 border-b-0"
@@ -54,7 +53,7 @@ export function VoicesTable({ voices }: Props) {
                   <td className="p-2 align-middle">{v.language}</td>
                 </tr>
                 {isExpanded && (
-                  <tr key={`${v.id}-expanded`} className="border-b bg-muted/30">
+                  <tr className="border-b bg-muted/30">
                     <td colSpan={3} className="p-3 align-middle">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="w-full sm:flex-1">
@@ -63,7 +62,7 @@ export function VoicesTable({ voices }: Props) {
                             hasAudio={!!v.refAudioPath}
                           />
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           <Button variant="outline" size="sm" asChild>
                             <Link
                               href={`/voices/${encodeURIComponent(v.id)}/edit`}
@@ -77,7 +76,7 @@ export function VoicesTable({ voices }: Props) {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             );
           })}
         </tbody>

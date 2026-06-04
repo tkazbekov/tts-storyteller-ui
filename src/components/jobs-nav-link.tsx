@@ -21,18 +21,23 @@ export function JobsNavLink() {
   }, []);
 
   useEffect(() => {
-    fetchCount();
+    const t = setTimeout(() => {
+      void fetchCount();
+    }, 0);
+    return () => clearTimeout(t);
   }, [fetchCount]);
 
   useEffect(() => {
     const interval = count !== null && count > 0 ? POLL_ACTIVE_MS : POLL_IDLE_MS;
-    const t = setInterval(fetchCount, interval);
+    const t = setInterval(() => {
+      void fetchCount();
+    }, interval);
     return () => clearInterval(t);
   }, [count, fetchCount]);
 
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState === "visible") fetchCount();
+      if (document.visibilityState === "visible") void fetchCount();
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);

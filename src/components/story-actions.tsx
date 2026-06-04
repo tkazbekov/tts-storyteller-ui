@@ -35,7 +35,6 @@ type Props = {
 export function StoryActions({ storyId }: Props) {
   const [resolved, setResolved] = useState<ResolvedLine[] | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
-  const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [jobMessage, setJobMessage] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -67,7 +66,6 @@ export function StoryActions({ storyId }: Props) {
           (j) => j.type === "generate" && j.storyId === storyId && (j.status === "queued" || j.status === "running")
         );
         if (!existing) return;
-        setJobId(existing.id);
         setJobStatus(existing.status);
         setJobMessage(existing.message ?? null);
         setGenerating(true);
@@ -122,12 +120,10 @@ export function StoryActions({ storyId }: Props) {
 
   const handleGenerate = async () => {
     setGenerating(true);
-    setJobId(null);
     setJobStatus(null);
     setJobMessage(null);
     try {
       const job = await generateStory(storyId, { concat: true });
-      setJobId(job.id);
       setJobStatus(job.status);
       setJobMessage(job.message ?? null);
 

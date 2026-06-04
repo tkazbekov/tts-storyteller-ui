@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Storymaker",
-  description: "Multi-voice story generation with Qwen3-TTS",
+  title: "TTS Storyteller UI",
+  description: "Companion UI for the local TTS Storyteller API",
 };
 
 export default function RootLayout({
@@ -34,7 +34,7 @@ export default function RootLayout({
           <header className="border-b border-border">
             <nav className="container mx-auto flex h-14 items-center gap-6 px-4">
               <Link href="/" className="font-semibold text-lg hover:underline underline-offset-4">
-                Storymaker
+                TTS Storyteller
               </Link>
               <Link href="/" className="text-muted-foreground hover:text-foreground text-sm">
                 Stories
