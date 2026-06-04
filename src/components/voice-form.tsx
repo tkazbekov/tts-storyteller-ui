@@ -22,10 +22,22 @@ type Props = {
 };
 
 function formatApiErrors(detail: unknown): string[] {
+  const formatOne = (e: { loc?: unknown; msg?: unknown }) => {
+    const loc = Array.isArray(e.loc) ? e.loc.join(".") : "request";
+    const msg = typeof e.msg === "string" ? e.msg : "Invalid value";
+    return `${loc}: ${msg}`;
+  };
+
+  if (Array.isArray(detail)) {
+    return detail
+      .filter((e): e is { loc?: unknown; msg?: unknown } => Boolean(e) && typeof e === "object")
+      .map(formatOne);
+  }
+
   if (!detail || typeof detail !== "object") return [];
-  const d = detail as { errors?: Array<{ loc: string[]; msg: string }> };
+  const d = detail as { errors?: Array<{ loc?: unknown; msg?: unknown }> };
   if (!Array.isArray(d.errors)) return [];
-  return d.errors.map((e) => `${e.loc.join(".")}: ${e.msg}`);
+  return d.errors.map(formatOne);
 }
 
 function isJob(
@@ -228,7 +240,7 @@ export function VoiceForm({ initialVoice, voiceId }: Props) {
               disabled={mode === "design" || isEdit}
               className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <option value="qwen">Qwen3-TTS</option>
+              <option value="qwen">Qwen TTS</option>
               <option value="vibevoice">VibeVoice</option>
             </select>
           </div>
