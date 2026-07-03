@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getVoice } from "@/lib/api";
+import { ApiError, getVoice } from "@/lib/api";
 import { VoiceForm } from "@/components/voice-form";
 import { VoiceSampleCard } from "@/components/voice-sample-card";
 import { DeleteVoiceButton } from "@/components/delete-voice-button";
@@ -13,8 +13,11 @@ export default async function EditVoicePage({ params }: Props) {
   let voice;
   try {
     voice = await getVoice(voiceId);
-  } catch {
-    notFound();
+  } catch (err) {
+    // Only a real 404 means "voice doesn't exist"; anything else (backend
+    // down, 500) must surface via the error boundary instead.
+    if (err instanceof ApiError && err.status === 404) notFound();
+    throw err;
   }
 
   return (

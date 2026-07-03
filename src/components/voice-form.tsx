@@ -16,6 +16,13 @@ import { useJobPolling } from "@/hooks/use-job-polling";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -177,19 +184,22 @@ export function VoiceForm({ initialVoice, voiceId }: Props) {
           {!isEdit && (
             <div className="space-y-2">
               <Label htmlFor="voice-mode">Creation mode</Label>
-              <select
-                id="voice-mode"
+              <Select
                 value={mode}
-                onChange={(e) => {
-                  const next = e.target.value as CreationMode;
+                onValueChange={(v) => {
+                  const next = v as CreationMode;
                   setMode(next);
                   if (next === "design") setBackend("qwen");
                 }}
-                className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
               >
-                <option value="design">Qwen voice design from text</option>
-                <option value="clone">Clone from reference audio</option>
-              </select>
+                <SelectTrigger id="voice-mode" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="design">Qwen voice design from text</SelectItem>
+                  <SelectItem value="clone">Clone from reference audio</SelectItem>
+                </SelectContent>
+              </Select>
               <p className="text-muted-foreground text-xs">
                 Voice design uses POST /voices and is Qwen-only. Cloning uploads reference audio, then calls POST /voices/clone for Qwen or VibeVoice.
               </p>
@@ -211,16 +221,19 @@ export function VoiceForm({ initialVoice, voiceId }: Props) {
 
           <div className="space-y-2">
             <Label htmlFor="voice-backend">Backend</Label>
-            <select
-              id="voice-backend"
+            <Select
               value={mode === "design" ? "qwen" : backend}
-              onChange={(e) => setBackend(e.target.value as TtsBackend)}
+              onValueChange={(v) => setBackend(v as TtsBackend)}
               disabled={mode === "design" || isEdit}
-              className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <option value="qwen">Qwen TTS</option>
-              <option value="vibevoice">VibeVoice</option>
-            </select>
+              <SelectTrigger id="voice-backend" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="qwen">Qwen TTS</SelectItem>
+                <SelectItem value="vibevoice">VibeVoice</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

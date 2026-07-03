@@ -33,6 +33,7 @@ export function VoicesTable({ voices }: Props) {
         <tbody>
           {voices.map((v) => {
             const isExpanded = expandedId === v.id;
+            const detailsId = `voice-details-${v.id}`;
             return (
               <Fragment key={v.id}>
                 <tr
@@ -42,18 +43,30 @@ export function VoicesTable({ voices }: Props) {
                   )}
                   onClick={() => toggle(v.id)}
                 >
-                  <td className="w-12 p-2 align-middle text-muted-foreground">
-                    {isExpanded ? (
-                      <ChevronDown className="h-4 w-4" aria-hidden />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" aria-hidden />
-                    )}
+                  <td className="w-12 p-1 align-middle text-muted-foreground">
+                    <button
+                      type="button"
+                      aria-expanded={isExpanded}
+                      aria-controls={detailsId}
+                      aria-label={`${isExpanded ? "Collapse" : "Expand"} details for voice ${v.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggle(v.id);
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4" aria-hidden />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" aria-hidden />
+                      )}
+                    </button>
                   </td>
                   <td className="p-2 align-middle font-medium">{v.id}</td>
                   <td className="p-2 align-middle">{v.language}</td>
                 </tr>
                 {isExpanded && (
-                  <tr className="border-b bg-muted/30">
+                  <tr className="border-b bg-muted/30" id={detailsId}>
                     <td colSpan={3} className="p-3 align-middle">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="w-full sm:flex-1">

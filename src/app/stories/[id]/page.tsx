@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getStory } from "@/lib/api";
+import { ApiError, getStory } from "@/lib/api";
 import { StoryForm } from "@/components/story-form";
 import { StoryActions } from "@/components/story-actions";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,11 @@ export default async function StoryDetailPage({ params }: Props) {
   let story;
   try {
     story = await getStory(id);
-  } catch {
-    notFound();
+  } catch (err) {
+    // Only a real 404 means "story doesn't exist"; anything else (backend
+    // down, 500) must surface via the error boundary instead.
+    if (err instanceof ApiError && err.status === 404) notFound();
+    throw err;
   }
 
   const storyId = story.slug ?? story.id ?? id;

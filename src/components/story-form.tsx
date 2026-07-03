@@ -23,6 +23,24 @@ type Props = {
   storyId?: string | null;
 };
 
+/**
+ * Rows carry a client-only _key so React list keys stay stable while the
+ * user edits the (user-visible, editable) roleId/id fields. Stripped before
+ * submitting.
+ */
+type RoleRow = Role & { _key: string };
+type LineRow = StoryLine & { _key: string };
+
+function withKey<T>(value: T): T & { _key: string } {
+  return { ...value, _key: crypto.randomUUID() };
+}
+
+function stripKey<T extends { _key: string }>(row: T): Omit<T, "_key"> {
+  const { _key, ...rest } = row;
+  void _key;
+  return rest;
+}
+
 export function StoryForm({ initialStory, storyId }: Props) {
   const router = useRouter();
   const [voices, setVoices] = useState<Voice[]>([]);
@@ -33,25 +51,31 @@ export function StoryForm({ initialStory, storyId }: Props) {
   const [defaultVoiceId, setDefaultVoiceId] = useState(
     initialStory?.defaultVoiceId ?? ""
   );
-  const [roles, setRoles] = useState<Role[]>(
-    initialStory?.roles?.length
+  const [roles, setRoles] = useState<RoleRow[]>(() =>
+    (initialStory?.roles?.length
       ? initialStory.roles
       : [{ roleId: 0, name: "Narrator", notes: null }]
+    ).map(withKey)
   );
   const [casting, setCasting] = useState<Record<string, string>>(
     initialStory?.casting ?? {}
   );
-  const [lines, setLines] = useState<StoryLine[]>(
-    initialStory?.lines?.length
+  const [lines, setLines] = useState<LineRow[]>(() =>
+    (initialStory?.lines?.length
       ? initialStory.lines
       : [{ id: 0, roleId: 0, line: "Once upon a time.", extra: null, actorId: null }]
+    ).map(withKey)
   );
 
   const isEdit = Boolean(storyId && initialStory);
 
   useEffect(() => {
     listVoices()
-      .then(setVoices)
+      .then((list) => {
+        setVoices(list);
+        // Pre-select the first voice so the Select shows what will be saved.
+        setDefaultVoiceId((prev) => prev || (list[0]?.id ?? ""));
+      })
       .catch(() => toast.error("Failed to load voices"))
       .finally(() => setLoadingVoices(false));
   }, []);
@@ -59,7 +83,7 @@ export function StoryForm({ initialStory, storyId }: Props) {
   const addRole = () => {
     const nextId =
       roles.length === 0 ? 0 : Math.max(...roles.map((r) => r.roleId)) + 1;
-    setRoles((prev) => [...prev, { roleId: nextId, name: "", notes: null }]);
+    setRoles((prev) => [...prev, withKey({ roleId: nextId, name: "", notes: null })]);
   };
 
   const updateRole = (index: number, field: keyof Role, value: string | number | null) => {
@@ -120,13 +144,13 @@ export function StoryForm({ initialStory, storyId }: Props) {
       lines.length === 0 ? 0 : Math.max(...lines.map((l) => l.id)) + 1;
     setLines((prev) => [
       ...prev,
-      {
+      withKey({
         id: nextId,
         roleId: roles[0]?.roleId ?? 0,
         line: "",
         extra: null,
         actorId: null,
-      },
+      }),
     ]);
   };
 
@@ -164,7 +188,7 @@ export function StoryForm({ initialStory, storyId }: Props) {
       return;
     }
     const validRoles = roles
-      .map((r) => ({ ...r, name: r.name.trim(), notes: r.notes || null }))
+      .map((r) => ({ ...stripKey(r), name: r.name.trim(), notes: r.notes || null }))
       .filter((r) => r.name.length > 0);
     if (validRoles.length === 0) {
       toast.error("At least one role with a name is required");
@@ -176,7 +200,7 @@ export function StoryForm({ initialStory, storyId }: Props) {
     }
 
     const validLines = lines.map((l) => ({
-      ...l,
+      ...stripKey(l),
       line: l.line.trim(),
       extra: l.extra || null,
       actorId: l.actorId || null,
@@ -208,7 +232,7 @@ export function StoryForm({ initialStory, storyId }: Props) {
         schemaVersion: 1,
         title: title.trim(),
         language: language.trim() || "English",
-        defaultVoiceId: defaultVoiceId || (voices[0]?.id ?? ""),
+        defaultVoiceId,
         roles: validRoles,
         casting: Object.keys(cleanedCasting).length ? cleanedCasting : null,
         lines: validLines,
@@ -280,7 +304,7 @@ export function StoryForm({ initialStory, storyId }: Props) {
               </p>
             ) : (
               <Select
-                value={defaultVoiceId || (voices[0]?.id ?? "")}
+                value={defaultVoiceId}
                 onValueChange={setDefaultVoiceId}
                 required
               >
@@ -309,7 +333,7 @@ export function StoryForm({ initialStory, storyId }: Props) {
         </CardHeader>
         <CardContent className="space-y-4">
           {roles.map((r, i) => (
-            <div key={i} className="flex flex-wrap items-end gap-2 rounded-md border p-3">
+            <div key={r._key} className="flex flex-wrap items-end gap-2 rounded-md border p-3">
               <div className="space-y-1 flex-1 min-w-[80px]">
                 <Label>ID</Label>
                 <Input
@@ -386,7 +410,7 @@ export function StoryForm({ initialStory, storyId }: Props) {
         </CardHeader>
         <CardContent className="space-y-4">
           {lines.map((l, i) => (
-            <div key={i} className="flex flex-wrap items-start gap-2 rounded-md border p-3">
+            <div key={l._key} className="flex flex-wrap items-start gap-2 rounded-md border p-3">
               <div className="space-y-1 w-16">
                 <Label>Role</Label>
                 <Select
