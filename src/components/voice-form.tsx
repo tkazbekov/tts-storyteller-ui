@@ -114,10 +114,6 @@ export function VoiceForm({ initialVoice, voiceId }: Props) {
       toast.error("Reference audio is required for voice cloning");
       return;
     }
-    if (isCloneEdit) {
-      toast.info("Cloned voices cannot be regenerated from this edit form yet. Delete and recreate the clone to change reference audio.");
-      return;
-    }
 
     setSubmitting(true);
     setJobStatus(null);

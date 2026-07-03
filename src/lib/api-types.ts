@@ -69,14 +69,8 @@ export interface VoiceCloneConfig {
   backend: TtsBackend;
 }
 
-export interface VoicePool {
-  name: string;
-  voiceIds: string[];
-}
-
 export interface GenerateRequest {
   concat?: boolean;
-  concatOut?: string | null;
 }
 
 export interface Job {
