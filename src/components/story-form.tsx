@@ -1,14 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import type { Role, StoryLine, StoryTemplate } from "@/lib/api-types";
-import { ApiError, createStory, formatApiErrors, updateStory, listVoices } from "@/lib/api";
-import type { Voice } from "@/lib/api-types";
+import type { StoryTemplate, Voice } from "@/lib/api-types";
+import { ApiError, createStory, updateStory, listVoices } from "@/lib/api";
+import {
+  fromStoryTemplate,
+  storyFieldPath,
+  storyFormSchema,
+  toStoryTemplate,
+  type StoryFormValues,
+} from "@/lib/forms/story-schema";
+import { applyServerErrors } from "@/lib/forms/server-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, fieldAria } from "@/components/ui/field";
 import {
   Select,
   SelectContent,
@@ -24,220 +33,95 @@ type Props = {
 };
 
 /**
- * Rows carry a client-only _key so React list keys stay stable while the
- * user edits the (user-visible, editable) roleId/id fields. Stripped before
- * submitting.
+ * Loader shell: form defaultValues (incl. first-voice preselect) must be
+ * computed synchronously, so the actual form mounts only once voices load.
  */
-type RoleRow = Role & { _key: string };
-type LineRow = StoryLine & { _key: string };
-
-function withKey<T>(value: T): T & { _key: string } {
-  return { ...value, _key: crypto.randomUUID() };
-}
-
-function stripKey<T extends { _key: string }>(row: T): Omit<T, "_key"> {
-  const { _key, ...rest } = row;
-  void _key;
-  return rest;
-}
-
 export function StoryForm({ initialStory, storyId }: Props) {
-  const router = useRouter();
-  const [voices, setVoices] = useState<Voice[]>([]);
-  const [loadingVoices, setLoadingVoices] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [title, setTitle] = useState(initialStory?.title ?? "");
-  const [language, setLanguage] = useState(initialStory?.language ?? "English");
-  const [defaultVoiceId, setDefaultVoiceId] = useState(
-    initialStory?.defaultVoiceId ?? ""
-  );
-  const [roles, setRoles] = useState<RoleRow[]>(() =>
-    (initialStory?.roles?.length
-      ? initialStory.roles
-      : [{ roleId: 0, name: "Narrator", notes: null }]
-    ).map(withKey)
-  );
-  const [casting, setCasting] = useState<Record<string, string>>(
-    initialStory?.casting ?? {}
-  );
-  const [lines, setLines] = useState<LineRow[]>(() =>
-    (initialStory?.lines?.length
-      ? initialStory.lines
-      : [{ id: 0, roleId: 0, line: "Once upon a time.", extra: null, actorId: null }]
-    ).map(withKey)
-  );
-
-  const isEdit = Boolean(storyId && initialStory);
+  const [voices, setVoices] = useState<Voice[] | null>(null);
 
   useEffect(() => {
     listVoices()
-      .then((list) => {
-        setVoices(list);
-        // Pre-select the first voice so the Select shows what will be saved.
-        setDefaultVoiceId((prev) => prev || (list[0]?.id ?? ""));
-      })
-      .catch(() => toast.error("Failed to load voices"))
-      .finally(() => setLoadingVoices(false));
+      .then(setVoices)
+      .catch(() => {
+        toast.error("Failed to load voices");
+        setVoices([]);
+      });
   }, []);
 
+  if (voices === null) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-muted-foreground">
+          Loading voices…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return <StoryFormFields voices={voices} initialStory={initialStory} storyId={storyId} />;
+}
+
+type InnerProps = Props & { voices: Voice[] };
+
+function StoryFormFields({ voices, initialStory, storyId }: InnerProps) {
+  const router = useRouter();
+  const isEdit = Boolean(storyId && initialStory);
+  const noVoices = voices.length === 0;
+
+  const {
+    register,
+    control,
+    handleSubmit,
+    getValues,
+    setValue,
+    setError,
+    // Compiler-safety: destructure formState here, in the component that owns
+    // useForm; never pass the proxy object down.
+    formState: { errors, isSubmitting },
+  } = useForm<StoryFormValues>({
+    resolver: zodResolver(storyFormSchema),
+    defaultValues: fromStoryTemplate(initialStory, voices),
+  });
+
+  const roleArray = useFieldArray({ control, name: "roles" });
+  const lineArray = useFieldArray({ control, name: "lines" });
+  // Line role-selects need the live role list (fields snapshots go stale).
+  const watchedRoles = useWatch({ control, name: "roles" });
+
   const addRole = () => {
-    const nextId =
-      roles.length === 0 ? 0 : Math.max(...roles.map((r) => r.roleId)) + 1;
-    setRoles((prev) => [...prev, withKey({ roleId: nextId, name: "", notes: null })]);
-  };
-
-  const updateRole = (index: number, field: keyof Role, value: string | number | null) => {
-    const previousRoleId = roles[index]?.roleId;
-    const nextRoleId = field === "roleId" ? Number(value) : null;
-
-    setRoles((prev) => {
-      const next = [...prev];
-      const r = { ...next[index], [field]: value };
-      if (field === "name" && typeof value === "string") r.name = value;
-      if (field === "notes") r.notes = value === "" ? null : (value as string);
-      if (field === "roleId") r.roleId = Number(value);
-      next[index] = r;
-      return next;
-    });
-
-    if (
-      field === "roleId" &&
-      previousRoleId !== undefined &&
-      typeof nextRoleId === "number" &&
-      Number.isInteger(nextRoleId) &&
-      nextRoleId >= 0 &&
-      previousRoleId !== nextRoleId
-    ) {
-      setCasting((prev) => {
-        const oldKey = String(previousRoleId);
-        const newKey = String(nextRoleId);
-        if (!(oldKey in prev)) return prev;
-        const next = { ...prev, [newKey]: prev[oldKey] };
-        delete next[oldKey];
-        return next;
-      });
-      setLines((prev) =>
-        prev.map((l) => (l.roleId === previousRoleId ? { ...l, roleId: nextRoleId } : l))
-      );
-    }
+    const roles = getValues("roles");
+    const nextId = roles.length ? Math.max(...roles.map((r) => r.roleId)) + 1 : 0;
+    roleArray.append({ roleId: nextId, name: "", notes: "", voiceId: "" });
   };
 
   const removeRole = (index: number) => {
-    if (roles.length <= 1) return;
-    const roleId = roles[index].roleId;
-    const remainingRoles = roles.filter((_, i) => i !== index);
-    const fallbackRoleId = remainingRoles[0]?.roleId ?? 0;
-
-    setRoles(remainingRoles);
-    setCasting((prev) => {
-      const next = { ...prev };
-      delete next[String(roleId)];
-      return next;
+    if (roleArray.fields.length <= 1) return;
+    const removedRoleId = getValues(`roles.${index}.roleId`);
+    roleArray.remove(index);
+    // Reassign orphaned lines to the first remaining role.
+    const fallback = getValues("roles")[0]?.roleId ?? 0;
+    getValues("lines").forEach((l, i) => {
+      if (l.roleId === removedRoleId) {
+        setValue(`lines.${i}.roleId`, fallback, { shouldDirty: true });
+      }
     });
-    setLines((prev) =>
-      prev.map((l) => (l.roleId === roleId ? { ...l, roleId: fallbackRoleId } : l))
-    );
   };
 
   const addLine = () => {
-    const nextId =
-      lines.length === 0 ? 0 : Math.max(...lines.map((l) => l.id)) + 1;
-    setLines((prev) => [
-      ...prev,
-      withKey({
-        id: nextId,
-        roleId: roles[0]?.roleId ?? 0,
-        line: "",
-        extra: null,
-        actorId: null,
-      }),
-    ]);
-  };
-
-  const updateLine = (
-    index: number,
-    field: keyof StoryLine,
-    value: string | number | null
-  ) => {
-    setLines((prev) => {
-      const next = [...prev];
-      const l = { ...next[index], [field]: value };
-      if (field === "line") l.line = value as string;
-      if (field === "extra") l.extra = value === "" ? null : (value as string);
-      if (field === "actorId") l.actorId = value === "" ? null : (value as string);
-      if (field === "roleId") l.roleId = Number(value);
-      if (field === "id") l.id = Number(value);
-      next[index] = l;
-      return next;
+    const lines = getValues("lines");
+    const nextId = lines.length ? Math.max(...lines.map((l) => l.lineId)) + 1 : 0;
+    lineArray.append({
+      lineId: nextId,
+      roleId: getValues("roles")[0]?.roleId ?? 0,
+      line: "",
+      extra: "",
+      actorId: "",
     });
   };
 
-  const removeLine = (index: number) => {
-    if (lines.length <= 1) return;
-    setLines((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) {
-      toast.error("Title is required");
-      return;
-    }
-    if (!defaultVoiceId && voices.length > 0) {
-      toast.error("Please select a default voice");
-      return;
-    }
-    const validRoles = roles
-      .map((r) => ({ ...stripKey(r), name: r.name.trim(), notes: r.notes || null }))
-      .filter((r) => r.name.length > 0);
-    if (validRoles.length === 0) {
-      toast.error("At least one role with a name is required");
-      return;
-    }
-    if (new Set(validRoles.map((r) => r.roleId)).size !== validRoles.length) {
-      toast.error("Role IDs must be unique");
-      return;
-    }
-
-    const validLines = lines.map((l) => ({
-      ...stripKey(l),
-      line: l.line.trim(),
-      extra: l.extra || null,
-      actorId: l.actorId || null,
-    }));
-    if (validLines.length === 0 || validLines.some((l) => l.line.length === 0)) {
-      toast.error("Each line needs text. Remove blank lines instead of saving them.");
-      return;
-    }
-    if (new Set(validLines.map((l) => l.id)).size !== validLines.length) {
-      toast.error("Line IDs must be unique");
-      return;
-    }
-    const validRoleIds = new Set(validRoles.map((r) => r.roleId));
-    if (validLines.some((l) => !validRoleIds.has(l.roleId))) {
-      toast.error("Every line must reference an existing role");
-      return;
-    }
-    const cleanedCasting = Object.fromEntries(
-      Object.entries(casting).filter(([roleId, voiceId]) =>
-        validRoleIds.has(Number(roleId)) && voiceId.trim().length > 0
-      )
-    );
-
-    setSubmitting(true);
+  const onSubmit = handleSubmit(async (values) => {
     try {
-      const payload: StoryTemplate = {
-        id: initialStory?.id ?? null,
-        slug: initialStory?.slug ?? null,
-        schemaVersion: 1,
-        title: title.trim(),
-        language: language.trim() || "English",
-        defaultVoiceId,
-        roles: validRoles,
-        casting: Object.keys(cleanedCasting).length ? cleanedCasting : null,
-        lines: validLines,
-      };
-
+      const payload = toStoryTemplate(values, initialStory);
       if (isEdit && storyId) {
         await updateStory(storyId, payload);
         toast.success("Story updated");
@@ -249,78 +133,79 @@ export function StoryForm({ initialStory, storyId }: Props) {
         router.push(`/stories/${target}`);
       }
     } catch (err: unknown) {
-      const messages = err instanceof ApiError ? formatApiErrors(err.detail) : [];
-      if (messages.length) messages.forEach((m) => toast.error(m));
-      else toast.error(err instanceof Error ? err.message : "Request failed");
-    } finally {
-      setSubmitting(false);
+      if (err instanceof ApiError) {
+        const unmapped = applyServerErrors(err, setError, (apiPath) =>
+          storyFieldPath(apiPath, getValues("roles"))
+        );
+        if (unmapped.length) {
+          setError("root.serverError", { message: unmapped.join("; ") });
+          unmapped.forEach((m) => toast.error(m));
+        }
+      } else {
+        toast.error(err instanceof Error ? err.message : "Request failed");
+      }
     }
-  };
-
-  if (loadingVoices && voices.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-center text-muted-foreground">
-          Loading voices…
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const noVoices = voices.length === 0;
-  const defaultVoiceOptions = noVoices ? [] : voices;
+  });
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={onSubmit} noValidate className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>Story</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="title">Title</Label>
+          {errors.root?.serverError && (
+            <p role="alert" className="text-destructive text-sm">
+              {errors.root.serverError.message}
+            </p>
+          )}
+
+          <Field label="Title" htmlFor="title" error={errors.title?.message}>
             <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              {...register("title")}
+              {...fieldAria("title", errors.title?.message)}
               placeholder="My Story"
-              required
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="language">Language</Label>
+          </Field>
+
+          <Field label="Language" htmlFor="language" error={errors.language?.message}>
             <Input
-              id="language"
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              {...register("language")}
+              {...fieldAria("language", errors.language?.message)}
               placeholder="English"
             />
-          </div>
-          <div className="space-y-2">
-            <Label>Default voice</Label>
+          </Field>
+
+          <Field
+            label="Default voice"
+            htmlFor="default-voice"
+            error={errors.defaultVoiceId?.message}
+          >
             {noVoices ? (
               <p className="text-muted-foreground text-sm">
                 No voices available. Create voices via the API or CLI, then refresh.
               </p>
             ) : (
-              <Select
-                value={defaultVoiceId}
-                onValueChange={setDefaultVoiceId}
-                required
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select voice" />
-                </SelectTrigger>
-                <SelectContent>
-                  {defaultVoiceOptions.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>
-                      {v.id} ({v.language})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Controller
+                name="defaultVoiceId"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger id="default-voice" className="w-full" ref={field.ref}>
+                      <SelectValue placeholder="Select voice" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {voices.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.id} ({v.language})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             )}
-          </div>
+          </Field>
         </CardContent>
       </Card>
 
@@ -332,67 +217,105 @@ export function StoryForm({ initialStory, storyId }: Props) {
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">
-          {roles.map((r, i) => (
-            <div key={r._key} className="flex flex-wrap items-end gap-2 rounded-md border p-3">
-              <div className="space-y-1 flex-1 min-w-[80px]">
-                <Label>ID</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={r.roleId}
-                  onChange={(e) => updateRole(i, "roleId", e.target.value)}
+          {(errors.roles?.root?.message ?? errors.roles?.message) && (
+            <p role="alert" className="text-destructive text-sm">
+              {errors.roles?.root?.message ?? errors.roles?.message}
+            </p>
+          )}
+          {roleArray.fields.map((field, i) => (
+            <div key={field.id} className="flex flex-wrap items-end gap-2 rounded-md border p-3">
+              <Field
+                label="ID"
+                htmlFor={`role-${i}-id`}
+                error={errors.roles?.[i]?.roleId?.message}
+                className="flex-1 min-w-[80px] space-y-1"
+              >
+                <Controller
+                  name={`roles.${i}.roleId`}
+                  control={control}
+                  render={({ field: f }) => (
+                    <Input
+                      {...fieldAria(`role-${i}-id`, errors.roles?.[i]?.roleId?.message)}
+                      type="number"
+                      min={0}
+                      ref={f.ref}
+                      value={Number.isNaN(f.value) ? "" : f.value}
+                      onChange={(e) => {
+                        const prev = f.value;
+                        const next = e.target.valueAsNumber;
+                        f.onChange(next);
+                        // Renumber lines that referenced the old roleId.
+                        if (Number.isInteger(next) && next >= 0 && prev !== next) {
+                          getValues("lines").forEach((l, li) => {
+                            if (l.roleId === prev) {
+                              setValue(`lines.${li}.roleId`, next, { shouldDirty: true });
+                            }
+                          });
+                        }
+                      }}
+                    />
+                  )}
                 />
-              </div>
-              <div className="space-y-1 flex-[2] min-w-[120px]">
-                <Label>Name</Label>
+              </Field>
+              <Field
+                label="Name"
+                htmlFor={`role-${i}-name`}
+                error={errors.roles?.[i]?.name?.message}
+                className="flex-[2] min-w-[120px] space-y-1"
+              >
                 <Input
-                  value={r.name}
-                  onChange={(e) => updateRole(i, "name", e.target.value)}
+                  {...register(`roles.${i}.name`)}
+                  {...fieldAria(`role-${i}-name`, errors.roles?.[i]?.name?.message)}
                   placeholder="Narrator"
                 />
-              </div>
-              <div className="space-y-1 flex-[2] min-w-[120px]">
-                <Label>Notes</Label>
+              </Field>
+              <Field
+                label="Notes"
+                htmlFor={`role-${i}-notes`}
+                error={errors.roles?.[i]?.notes?.message}
+                className="flex-[2] min-w-[120px] space-y-1"
+              >
                 <Input
-                  value={r.notes ?? ""}
-                  onChange={(e) => updateRole(i, "notes", e.target.value)}
+                  {...register(`roles.${i}.notes`)}
+                  {...fieldAria(`role-${i}-notes`, errors.roles?.[i]?.notes?.message)}
                   placeholder="Optional"
                 />
-              </div>
-              <div className="space-y-1 w-[140px]">
-                <Label>Voice override</Label>
-                <Select
-                  value={casting[String(r.roleId)] ?? "__default__"}
-                  onValueChange={(v) =>
-                    setCasting((prev) => {
-                      if (!v || v === "__default__") {
-                        const next = { ...prev };
-                        delete next[String(r.roleId)];
-                        return next;
-                      }
-                      return { ...prev, [String(r.roleId)]: v };
-                    })
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Default" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__default__">Default</SelectItem>
-                    {voices.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              </Field>
+              <Field
+                label="Voice override"
+                htmlFor={`role-${i}-voice`}
+                error={errors.roles?.[i]?.voiceId?.message}
+                className="w-[140px] space-y-1"
+              >
+                <Controller
+                  name={`roles.${i}.voiceId`}
+                  control={control}
+                  render={({ field: f }) => (
+                    <Select
+                      value={f.value || "__default__"}
+                      onValueChange={(v) => f.onChange(v === "__default__" ? "" : v)}
+                    >
+                      <SelectTrigger id={`role-${i}-voice`} className="w-full" ref={f.ref}>
+                        <SelectValue placeholder="Default" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__default__">Default</SelectItem>
+                        {voices.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>
+                            {v.id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </Field>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 onClick={() => removeRole(i)}
-                disabled={roles.length <= 1}
+                disabled={roleArray.fields.length <= 1}
               >
                 Remove
               </Button>
@@ -409,68 +332,100 @@ export function StoryForm({ initialStory, storyId }: Props) {
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">
-          {lines.map((l, i) => (
-            <div key={l._key} className="flex flex-wrap items-start gap-2 rounded-md border p-3">
-              <div className="space-y-1 w-16">
-                <Label>Role</Label>
-                <Select
-                  value={String(l.roleId)}
-                  onValueChange={(v) => updateLine(i, "roleId", v)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {roles.map((r) => (
-                      <SelectItem key={r.roleId} value={String(r.roleId)}>
-                        {r.roleId}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1 flex-1 min-w-[200px]">
-                <Label>Line</Label>
-                <Input
-                  value={l.line}
-                  onChange={(e) => updateLine(i, "line", e.target.value)}
-                  placeholder="Text to speak"
-                  required
+          {(errors.lines?.root?.message ?? errors.lines?.message) && (
+            <p role="alert" className="text-destructive text-sm">
+              {errors.lines?.root?.message ?? errors.lines?.message}
+            </p>
+          )}
+          {lineArray.fields.map((field, i) => (
+            <div key={field.id} className="flex flex-wrap items-start gap-2 rounded-md border p-3">
+              <Field
+                label="Role"
+                htmlFor={`line-${i}-role`}
+                error={errors.lines?.[i]?.roleId?.message ?? errors.lines?.[i]?.lineId?.message}
+                className="w-16 space-y-1"
+              >
+                <Controller
+                  name={`lines.${i}.roleId`}
+                  control={control}
+                  render={({ field: f }) => (
+                    <Select
+                      value={String(f.value)}
+                      onValueChange={(v) => f.onChange(Number(v))}
+                    >
+                      <SelectTrigger id={`line-${i}-role`} className="w-full" ref={f.ref}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {watchedRoles.map((r) => (
+                          <SelectItem key={r.roleId} value={String(r.roleId)}>
+                            {r.roleId}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 />
-              </div>
-              <div className="space-y-1 w-24">
-                <Label>Extra</Label>
+              </Field>
+              <Field
+                label="Line"
+                htmlFor={`line-${i}-text`}
+                error={errors.lines?.[i]?.line?.message}
+                className="flex-1 min-w-[200px] space-y-1"
+              >
                 <Input
-                  value={l.extra ?? ""}
-                  onChange={(e) => updateLine(i, "extra", e.target.value)}
+                  {...register(`lines.${i}.line`)}
+                  {...fieldAria(`line-${i}-text`, errors.lines?.[i]?.line?.message)}
+                  placeholder="Text to speak"
+                />
+              </Field>
+              <Field
+                label="Extra"
+                htmlFor={`line-${i}-extra`}
+                error={errors.lines?.[i]?.extra?.message}
+                className="w-24 space-y-1"
+              >
+                <Input
+                  {...register(`lines.${i}.extra`)}
+                  {...fieldAria(`line-${i}-extra`, errors.lines?.[i]?.extra?.message)}
                   placeholder="Hint"
                 />
-              </div>
-              <div className="space-y-1 w-[120px]">
-                <Label>Voice (line)</Label>
-                <Select
-                  value={l.actorId ?? "__none__"}
-                  onValueChange={(v) => updateLine(i, "actorId", v === "__none__" ? null : v)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="—" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">—</SelectItem>
-                    {voices.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              </Field>
+              <Field
+                label="Voice (line)"
+                htmlFor={`line-${i}-voice`}
+                error={errors.lines?.[i]?.actorId?.message}
+                className="w-[120px] space-y-1"
+              >
+                <Controller
+                  name={`lines.${i}.actorId`}
+                  control={control}
+                  render={({ field: f }) => (
+                    <Select
+                      value={f.value || "__none__"}
+                      onValueChange={(v) => f.onChange(v === "__none__" ? "" : v)}
+                    >
+                      <SelectTrigger id={`line-${i}-voice`} className="w-full" ref={f.ref}>
+                        <SelectValue placeholder="—" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">—</SelectItem>
+                        {voices.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>
+                            {v.id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </Field>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                onClick={() => removeLine(i)}
-                disabled={lines.length <= 1}
+                onClick={() => lineArray.fields.length > 1 && lineArray.remove(i)}
+                disabled={lineArray.fields.length <= 1}
               >
                 Remove
               </Button>
@@ -480,15 +435,11 @@ export function StoryForm({ initialStory, storyId }: Props) {
       </Card>
 
       <div className="flex gap-2">
-        <Button type="submit" disabled={submitting || (!isEdit && noVoices)}>
-          {submitting ? "Saving…" : isEdit ? "Update story" : "Create story"}
+        <Button type="submit" disabled={isSubmitting || (!isEdit && noVoices)}>
+          {isSubmitting ? "Saving…" : isEdit ? "Update story" : "Create story"}
         </Button>
         {isEdit && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => router.back()}
-          >
+          <Button type="button" variant="outline" onClick={() => router.back()}>
             Cancel
           </Button>
         )}
