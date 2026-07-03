@@ -40,11 +40,14 @@ export default function JobsPage() {
     fetchJobs();
   }, [fetchJobs]);
 
+  // Poll while mounted (not gated on jobs.length: a job started elsewhere
+  // must show up here); skip ticks while the tab is hidden.
   useEffect(() => {
-    if (jobs.length === 0) return;
-    const t = setInterval(fetchJobs, POLL_INTERVAL_MS);
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void fetchJobs();
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(t);
-  }, [jobs.length, fetchJobs]);
+  }, [fetchJobs]);
 
   const handleCancel = async (jobId: string) => {
     setCancellingId(jobId);

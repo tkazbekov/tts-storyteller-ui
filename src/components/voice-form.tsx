@@ -9,18 +9,16 @@ import {
   cloneVoice,
   createVoice,
   formatApiErrors,
-  getJob,
   updateVoice,
   uploadReferenceAudio,
 } from "@/lib/api";
+import { useJobPolling } from "@/hooks/use-job-polling";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-const POLL_INTERVAL_MS = 2500;
 
 type CreationMode = "design" | "clone";
 
@@ -40,6 +38,7 @@ export function VoiceForm({ initialVoice, voiceId }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [jobMessage, setJobMessage] = useState<string | null>(null);
+  const { start: startPolling } = useJobPolling();
 
   const [id, setId] = useState(initialVoice?.id ?? "");
   const [language, setLanguage] = useState(initialVoice?.language ?? "English");
@@ -61,28 +60,26 @@ export function VoiceForm({ initialVoice, voiceId }: Props) {
   };
 
   const pollJob = (jobIdToPoll: string, successMessage: string) => {
-    getJob(jobIdToPoll)
-      .then((j) => {
+    startPolling(jobIdToPoll, {
+      onUpdate: (j) => {
         setJobStatus(j.status);
         setJobMessage(j.message ?? null);
-        if (j.status === "succeeded") {
-          toast.success(successMessage);
-          resetJobState();
-          router.push("/voices");
-          router.refresh();
-          return;
-        }
-        if (j.status === "failed") {
-          toast.error(j.message ?? "Job failed");
-          resetJobState();
-          return;
-        }
-        setTimeout(() => pollJob(jobIdToPoll, successMessage), POLL_INTERVAL_MS);
-      })
-      .catch(() => {
+      },
+      onSucceeded: () => {
+        toast.success(successMessage);
+        resetJobState();
+        router.push("/voices");
+        router.refresh();
+      },
+      onFailed: (j) => {
+        toast.error(j.message ?? "Job failed");
+        resetJobState();
+      },
+      onError: () => {
         toast.error("Failed to poll job");
         resetJobState();
-      });
+      },
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -124,7 +121,7 @@ export function VoiceForm({ initialVoice, voiceId }: Props) {
         });
         setJobStatus(job.status);
         setJobMessage(job.message ?? null);
-        setTimeout(() => pollJob(job.id, "Voice clone created"), POLL_INTERVAL_MS);
+        pollJob(job.id, "Voice clone created");
         return;
       }
 
@@ -141,10 +138,7 @@ export function VoiceForm({ initialVoice, voiceId }: Props) {
         if (isJob(response)) {
           setJobStatus(response.status);
           setJobMessage(response.message ?? null);
-          setTimeout(
-            () => pollJob(response.id, "Voice updated and regenerated"),
-            POLL_INTERVAL_MS
-          );
+          pollJob(response.id, "Voice updated and regenerated");
         } else {
           toast.success("Voice updated");
           router.push("/voices");
@@ -155,7 +149,7 @@ export function VoiceForm({ initialVoice, voiceId }: Props) {
         const job = await createVoice(config);
         setJobStatus(job.status);
         setJobMessage(job.message ?? null);
-        setTimeout(() => pollJob(job.id, "Voice created"), POLL_INTERVAL_MS);
+        pollJob(job.id, "Voice created");
       }
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 409) {

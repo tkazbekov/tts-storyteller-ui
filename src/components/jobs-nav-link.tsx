@@ -21,16 +21,14 @@ export function JobsNavLink() {
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      void fetchCount();
-    }, 0);
-    return () => clearTimeout(t);
+    void fetchCount();
   }, [fetchCount]);
 
   useEffect(() => {
     const interval = count !== null && count > 0 ? POLL_ACTIVE_MS : POLL_IDLE_MS;
     const t = setInterval(() => {
-      void fetchCount();
+      // The visibilitychange listener below refreshes on return to the tab.
+      if (document.visibilityState === "visible") void fetchCount();
     }, interval);
     return () => clearInterval(t);
   }, [count, fetchCount]);
