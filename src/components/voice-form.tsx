@@ -2,20 +2,29 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import type { TtsBackend, Voice, VoiceConfig } from "@/lib/api-types";
+import type { Voice } from "@/lib/api-types";
 import {
   ApiError,
   cloneVoice,
   createVoice,
-  formatApiErrors,
   updateVoice,
   uploadReferenceAudio,
 } from "@/lib/api";
-import { useJobPolling } from "@/hooks/use-job-polling";
+import {
+  makeVoiceFormSchema,
+  toVoiceCloneConfig,
+  toVoiceConfig,
+  voiceFieldPath,
+  type VoiceFormValues,
+} from "@/lib/forms/voice-schema";
+import { applyServerErrors } from "@/lib/forms/server-errors";
+import { useJobWatcher } from "@/hooks/use-job-events";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, fieldAria } from "@/components/ui/field";
 import {
   Select,
   SelectContent,
@@ -26,8 +35,6 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-type CreationMode = "design" | "clone";
 
 type Props = {
   initialVoice?: Voice | null;
@@ -42,22 +49,41 @@ function isJob(
 
 export function VoiceForm({ initialVoice, voiceId }: Props) {
   const router = useRouter();
+  // Manual submit lifecycle state (NOT RHF's isSubmitting): generation
+  // continues via job watching long after handleSubmit resolves.
   const [submitting, setSubmitting] = useState(false);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [jobMessage, setJobMessage] = useState<string | null>(null);
-  const { start: startPolling } = useJobPolling();
-
-  const [id, setId] = useState(initialVoice?.id ?? "");
-  const [language, setLanguage] = useState(initialVoice?.language ?? "English");
-  const [instruction, setInstruction] = useState(initialVoice?.instruction ?? "");
-  const [sampleText, setSampleText] = useState(initialVoice?.sample_text ?? "");
-  const [mode, setMode] = useState<CreationMode>(initialVoice?.refAudioPath ? "clone" : "design");
-  const [backend, setBackend] = useState<TtsBackend>(initialVoice?.backend ?? "qwen");
-  const [referenceAudio, setReferenceAudio] = useState<File | null>(null);
-  const [referenceText, setReferenceText] = useState("");
+  const { start: startPolling } = useJobWatcher();
 
   const isEdit = Boolean(voiceId && initialVoice);
-  const isCloneEdit = isEdit && mode === "clone";
+  const isCloneEdit = isEdit && Boolean(initialVoice?.refAudioPath);
+
+  const {
+    register,
+    control,
+    handleSubmit,
+    setValue,
+    setError,
+    watch,
+    // Compiler-safety: destructure formState here, in the component that owns
+    // useForm; never pass the proxy object down.
+    formState: { errors },
+  } = useForm<VoiceFormValues>({
+    resolver: zodResolver(makeVoiceFormSchema({ isEdit })),
+    defaultValues: {
+      mode: initialVoice?.refAudioPath ? "clone" : "design",
+      id: initialVoice?.id ?? "",
+      language: initialVoice?.language ?? "English",
+      instruction: initialVoice?.instruction ?? "",
+      backend: initialVoice?.backend ?? "qwen",
+      sampleText: initialVoice?.sample_text ?? "",
+      referenceAudio: null,
+      referenceText: "",
+    } as VoiceFormValues,
+  });
+
+  const mode = watch("mode");
   const isPolling = submitting && jobStatus !== null;
 
   const resetJobState = () => {
@@ -89,56 +115,25 @@ export function VoiceForm({ initialVoice, voiceId }: Props) {
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!id.trim()) {
-      toast.error("ID is required");
-      return;
-    }
-    if (!instruction.trim()) {
-      toast.error("Instruction is required");
-      return;
-    }
-    if (mode === "design" && !sampleText.trim()) {
-      toast.error("Sample text is required for Qwen voice design");
-      return;
-    }
-    if (!isEdit && mode === "clone" && !referenceAudio) {
-      toast.error("Reference audio is required for voice cloning");
-      return;
-    }
-
+  const onSubmit = handleSubmit(async (values) => {
     setSubmitting(true);
     setJobStatus(null);
     setJobMessage(null);
 
     try {
-      if (mode === "clone") {
-        if (!referenceAudio) throw new Error("Reference audio is required");
+      if (values.mode === "clone") {
+        if (!values.referenceAudio) throw new Error("Reference audio is required");
         setJobMessage("Uploading reference audio…");
-        const upload = await uploadReferenceAudio(referenceAudio);
+        const upload = await uploadReferenceAudio(values.referenceAudio);
         setJobMessage("Queued for voice cloning…");
-        const job = await cloneVoice({
-          id: id.trim(),
-          language: language.trim() || "English",
-          instruction: instruction.trim(),
-          ref_audio_url: upload.file_path,
-          ref_text: referenceText.trim() || null,
-          backend,
-        });
+        const job = await cloneVoice(toVoiceCloneConfig(values, upload.file_path));
         setJobStatus(job.status);
         setJobMessage(job.message ?? null);
         pollJob(job.id, "Voice clone created");
         return;
       }
 
-      const config: VoiceConfig = {
-        id: id.trim(),
-        language: language.trim() || "English",
-        instruction: instruction.trim(),
-        sample_text: sampleText.trim(),
-        backend: "qwen",
-      };
+      const config = toVoiceConfig(values);
 
       if (isEdit && voiceId) {
         const response = await updateVoice(voiceId, config);
@@ -161,145 +156,191 @@ export function VoiceForm({ initialVoice, voiceId }: Props) {
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 409) {
         toast.error(
-          id === (initialVoice?.id ?? voiceId)
+          values.id === (initialVoice?.id ?? voiceId)
             ? "This voice is already being generated."
             : "A voice with this ID already exists or is being generated."
         );
+      } else if (err instanceof ApiError) {
+        const unmapped = applyServerErrors(err, setError, voiceFieldPath);
+        if (unmapped.length) {
+          setError("root.serverError", { message: unmapped.join("; ") });
+          unmapped.forEach((m) => toast.error(m));
+        }
       } else {
-        const messages = err instanceof ApiError ? formatApiErrors(err.detail) : [];
-        if (messages.length) messages.forEach((m) => toast.error(m));
-        else toast.error(err instanceof Error ? err.message : "Request failed");
+        toast.error(err instanceof Error ? err.message : "Request failed");
       }
       resetJobState();
     }
-  };
+  });
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={onSubmit} noValidate className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>Voice</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {!isEdit && (
-            <div className="space-y-2">
-              <Label htmlFor="voice-mode">Creation mode</Label>
-              <Select
-                value={mode}
-                onValueChange={(v) => {
-                  const next = v as CreationMode;
-                  setMode(next);
-                  if (next === "design") setBackend("qwen");
-                }}
-              >
-                <SelectTrigger id="voice-mode" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="design">Qwen voice design from text</SelectItem>
-                  <SelectItem value="clone">Clone from reference audio</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-muted-foreground text-xs">
-                Voice design uses POST /voices and is Qwen-only. Cloning uploads reference audio, then calls POST /voices/clone for Qwen or VibeVoice.
-              </p>
-            </div>
+          {errors.root?.serverError && (
+            <p role="alert" className="text-destructive text-sm">
+              {errors.root.serverError.message}
+            </p>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="voice-id">ID</Label>
+          {!isEdit && (
+            <Field
+              label="Creation mode"
+              htmlFor="voice-mode"
+              description="Voice design uses POST /voices and is Qwen-only. Cloning uploads reference audio, then calls POST /voices/clone for Qwen or VibeVoice."
+            >
+              <Controller
+                name="mode"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value}
+                    onValueChange={(v) => {
+                      field.onChange(v);
+                      if (v === "design") setValue("backend", "qwen");
+                    }}
+                  >
+                    <SelectTrigger id="voice-mode" className="w-full" ref={field.ref}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="design">Qwen voice design from text</SelectItem>
+                      <SelectItem value="clone">Clone from reference audio</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </Field>
+          )}
+
+          <Field
+            label="ID"
+            htmlFor="voice-id"
+            error={errors.id?.message}
+            description={isEdit ? "ID cannot be changed when editing." : undefined}
+          >
             <Input
-              id="voice-id"
-              value={id}
-              onChange={(e) => setId(e.target.value)}
+              {...register("id")}
+              {...fieldAria("voice-id", errors.id?.message)}
               placeholder="e.g. narrator_male"
-              required
               disabled={isEdit}
             />
-            {isEdit && <p className="text-muted-foreground text-xs">ID cannot be changed when editing.</p>}
-          </div>
+          </Field>
 
-          <div className="space-y-2">
-            <Label htmlFor="voice-backend">Backend</Label>
-            <Select
-              value={mode === "design" ? "qwen" : backend}
-              onValueChange={(v) => setBackend(v as TtsBackend)}
-              disabled={mode === "design" || isEdit}
-            >
-              <SelectTrigger id="voice-backend" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="qwen">Qwen TTS</SelectItem>
-                <SelectItem value="vibevoice">VibeVoice</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <Field label="Backend" htmlFor="voice-backend" error={errors.backend?.message}>
+            <Controller
+              name="backend"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  value={mode === "design" ? "qwen" : field.value}
+                  onValueChange={field.onChange}
+                  disabled={mode === "design" || isEdit}
+                >
+                  <SelectTrigger id="voice-backend" className="w-full" ref={field.ref}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="qwen">Qwen TTS</SelectItem>
+                    <SelectItem value="vibevoice">VibeVoice</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </Field>
 
-          <div className="space-y-2">
-            <Label htmlFor="voice-language">Language</Label>
+          <Field label="Language" htmlFor="voice-language" error={errors.language?.message}>
             <Input
-              id="voice-language"
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              {...register("language")}
+              {...fieldAria("voice-language", errors.language?.message)}
               placeholder="English"
             />
-          </div>
+          </Field>
 
-          <div className="space-y-2">
-            <Label htmlFor="voice-instruction">Instruction</Label>
+          <Field
+            label="Instruction"
+            htmlFor="voice-instruction"
+            error={errors.instruction?.message}
+          >
             <Textarea
-              id="voice-instruction"
-              value={instruction}
-              onChange={(e) => setInstruction(e.target.value)}
-              placeholder={mode === "clone" ? "Voice description/notes for this reference speaker" : "Voice instruction/prompt for Qwen voice design"}
-              required
+              {...register("instruction")}
+              {...fieldAria("voice-instruction", errors.instruction?.message)}
+              placeholder={
+                mode === "clone"
+                  ? "Voice description/notes for this reference speaker"
+                  : "Voice instruction/prompt for Qwen voice design"
+              }
               rows={4}
               disabled={isCloneEdit}
             />
-          </div>
+          </Field>
 
           {mode === "design" ? (
-            <div className="space-y-2">
-              <Label htmlFor="voice-sample">Sample text</Label>
+            <Field
+              label="Sample text"
+              htmlFor="voice-sample"
+              error={"sampleText" in errors ? errors.sampleText?.message : undefined}
+            >
               <Textarea
-                id="voice-sample"
-                value={sampleText}
-                onChange={(e) => setSampleText(e.target.value)}
+                {...register("sampleText")}
+                {...fieldAria(
+                  "voice-sample",
+                  "sampleText" in errors ? errors.sampleText?.message : undefined
+                )}
                 placeholder="Sample text used for voice generation"
-                required
                 rows={3}
               />
-            </div>
+            </Field>
           ) : (
             <div className="space-y-4">
               {isCloneEdit ? (
                 <p className="text-muted-foreground text-sm">
-                  This voice was created from reference audio. To change the reference, delete and recreate the cloned voice.
+                  This voice was created from reference audio. To change the reference, delete and
+                  recreate the cloned voice.
                 </p>
               ) : (
-                <div className="space-y-2">
-                  <Label htmlFor="voice-reference-audio">Reference audio</Label>
-                  <Input
-                    id="voice-reference-audio"
-                    type="file"
-                    accept="audio/wav,audio/x-wav,audio/*"
-                    onChange={(e) => setReferenceAudio(e.target.files?.[0] ?? null)}
-                    required
+                <Field
+                  label="Reference audio"
+                  htmlFor="voice-reference-audio"
+                  error={"referenceAudio" in errors ? errors.referenceAudio?.message : undefined}
+                >
+                  <Controller
+                    name="referenceAudio"
+                    control={control}
+                    render={({ field }) => (
+                      <Input
+                        {...fieldAria(
+                          "voice-reference-audio",
+                          "referenceAudio" in errors ? errors.referenceAudio?.message : undefined
+                        )}
+                        type="file"
+                        accept="audio/wav,audio/x-wav,audio/*"
+                        ref={field.ref}
+                        onChange={(e) => field.onChange(e.target.files?.[0] ?? null)}
+                      />
+                    )}
                   />
-                </div>
+                </Field>
               )}
-              <div className="space-y-2">
-                <Label htmlFor="voice-reference-text">Reference transcript</Label>
+              <Field
+                label="Reference transcript"
+                htmlFor="voice-reference-text"
+                error={"referenceText" in errors ? errors.referenceText?.message : undefined}
+              >
                 <Textarea
-                  id="voice-reference-text"
-                  value={referenceText}
-                  onChange={(e) => setReferenceText(e.target.value)}
+                  {...register("referenceText")}
+                  {...fieldAria(
+                    "voice-reference-text",
+                    "referenceText" in errors ? errors.referenceText?.message : undefined
+                  )}
                   placeholder="Optional transcript of the reference clip"
                   rows={3}
                   disabled={isCloneEdit}
                 />
-              </div>
+              </Field>
             </div>
           )}
         </CardContent>
