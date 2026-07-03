@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { listActiveJobs, cancelJob } from "@/lib/api";
+import { ApiError, listActiveJobs, cancelJob } from "@/lib/api";
 import type { Job } from "@/lib/api-types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,9 +52,12 @@ export default function JobsPage() {
       await cancelJob(jobId);
       toast.success("Job cancelled");
       await fetchJobs();
-    } catch (e) {
-      const err = e as Error & { status?: number };
-      toast.error(err.status === 409 ? "Job is no longer active" : err.message ?? "Cancel failed");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        toast.error("Job is no longer active");
+      } else {
+        toast.error(err instanceof Error ? err.message : "Cancel failed");
+      }
     } finally {
       setCancellingId(null);
     }

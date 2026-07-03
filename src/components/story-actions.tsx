@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
+  ApiError,
   renderStory,
   generateStory,
   getJob,
@@ -11,6 +12,7 @@ import {
   getStoryFullAudioUrl,
   listStoryAudioFiles,
   getStoryAudioFileUrl,
+  STORY_FULL_AUDIO_FILENAME,
 } from "@/lib/api";
 import { AudioPlayerWithDownload } from "@/components/audio-player-with-download";
 import type { ResolvedLine } from "@/lib/api-types";
@@ -48,7 +50,7 @@ export function StoryActions({ storyId }: Props) {
       .then((files) => {
         if (cancelled) return;
         setAudioFiles(files);
-        setHasFullAudio(files.includes("story_full.wav"));
+        setHasFullAudio(files.includes(STORY_FULL_AUDIO_FILENAME));
       })
       .catch(() => {});
     return () => {
@@ -157,11 +159,10 @@ export function StoryActions({ storyId }: Props) {
       };
       setTimeout(() => poll(job.id), POLL_INTERVAL_MS);
     } catch (err) {
-      const e = err as Error & { status?: number };
-      if (e.status === 409) {
+      if (err instanceof ApiError && err.status === 409) {
         toast.error("A job is already running for this story. Manage or cancel it from Jobs.");
       } else {
-        toast.error(e.message ?? "Start generation failed");
+        toast.error(err instanceof Error ? err.message : "Start generation failed");
       }
       setGenerating(false);
     }

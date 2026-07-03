@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { deleteVoice } from "@/lib/api";
+import { ApiError, deleteVoice } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -41,11 +41,10 @@ export function DeleteVoiceButton({
       router.push("/voices");
       router.refresh();
     } catch (err) {
-      const e = err as Error & { status?: number };
-      if (e.status === 409) {
+      if (err instanceof ApiError && err.status === 409) {
         toast.error("Voice is currently being generated. Try again later.");
       } else {
-        toast.error(e.message ?? "Delete failed");
+        toast.error(err instanceof Error ? err.message : "Delete failed");
       }
     } finally {
       setDeleting(false);

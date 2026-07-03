@@ -4,7 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import type { TtsBackend, Voice, VoiceConfig } from "@/lib/api-types";
-import { cloneVoice, createVoice, getJob, updateVoice, uploadReferenceAudio } from "@/lib/api";
+import {
+  ApiError,
+  cloneVoice,
+  createVoice,
+  formatApiErrors,
+  getJob,
+  updateVoice,
+  uploadReferenceAudio,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,25 +28,6 @@ type Props = {
   initialVoice?: Voice | null;
   voiceId?: string | null;
 };
-
-function formatApiErrors(detail: unknown): string[] {
-  const formatOne = (e: { loc?: unknown; msg?: unknown }) => {
-    const loc = Array.isArray(e.loc) ? e.loc.join(".") : "request";
-    const msg = typeof e.msg === "string" ? e.msg : "Invalid value";
-    return `${loc}: ${msg}`;
-  };
-
-  if (Array.isArray(detail)) {
-    return detail
-      .filter((e): e is { loc?: unknown; msg?: unknown } => Boolean(e) && typeof e === "object")
-      .map(formatOne);
-  }
-
-  if (!detail || typeof detail !== "object") return [];
-  const d = detail as { errors?: Array<{ loc?: unknown; msg?: unknown }> };
-  if (!Array.isArray(d.errors)) return [];
-  return d.errors.map(formatOne);
-}
 
 function isJob(
   response: { id: string; status?: string }
@@ -169,17 +158,16 @@ export function VoiceForm({ initialVoice, voiceId }: Props) {
         setTimeout(() => pollJob(job.id, "Voice created"), POLL_INTERVAL_MS);
       }
     } catch (err: unknown) {
-      const error = err as Error & { status?: number; detail?: unknown };
-      if (error.status === 409) {
+      if (err instanceof ApiError && err.status === 409) {
         toast.error(
           id === (initialVoice?.id ?? voiceId)
             ? "This voice is already being generated."
             : "A voice with this ID already exists or is being generated."
         );
       } else {
-        const messages = formatApiErrors(error.detail);
+        const messages = err instanceof ApiError ? formatApiErrors(err.detail) : [];
         if (messages.length) messages.forEach((m) => toast.error(m));
-        else toast.error(error.message ?? "Request failed");
+        else toast.error(err instanceof Error ? err.message : "Request failed");
       }
       resetJobState();
     }

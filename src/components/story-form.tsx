@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import type { Role, StoryLine, StoryTemplate } from "@/lib/api-types";
-import { createStory, updateStory, listVoices } from "@/lib/api";
+import { ApiError, createStory, formatApiErrors, updateStory, listVoices } from "@/lib/api";
 import type { Voice } from "@/lib/api-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,13 +17,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-function formatApiErrors(detail: unknown): string[] {
-  if (!detail || typeof detail !== "object") return [];
-  const d = detail as { errors?: Array<{ loc: string[]; msg: string }> };
-  if (!Array.isArray(d.errors)) return [];
-  return d.errors.map((e) => `${e.loc.join(".")}: ${e.msg}`);
-}
 
 type Props = {
   initialStory?: StoryTemplate | null;
@@ -232,10 +225,9 @@ export function StoryForm({ initialStory, storyId }: Props) {
         router.push(`/stories/${target}`);
       }
     } catch (err: unknown) {
-      const e = err as Error & { status?: number; detail?: unknown };
-      const messages = formatApiErrors(e.detail);
+      const messages = err instanceof ApiError ? formatApiErrors(err.detail) : [];
       if (messages.length) messages.forEach((m) => toast.error(m));
-      else toast.error(e.message ?? "Request failed");
+      else toast.error(err instanceof Error ? err.message : "Request failed");
     } finally {
       setSubmitting(false);
     }

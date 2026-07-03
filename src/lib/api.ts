@@ -17,8 +17,49 @@ import type {
 
 export type { ApiErrorDetail } from "./api-types";
 
+/** Error thrown for non-2xx API responses. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly detail: unknown
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/**
+ * Format a FastAPI error `detail` into human-readable messages.
+ * Handles both FastAPI's native validation shape (detail is an array of
+ * {loc, msg}) and this backend's custom shape (detail is {errors: [...]}).
+ */
+export function formatApiErrors(detail: unknown): string[] {
+  const formatOne = (e: { loc?: unknown; msg?: unknown }) => {
+    const loc = Array.isArray(e.loc) ? e.loc.join(".") : "request";
+    const msg = typeof e.msg === "string" ? e.msg : "Invalid value";
+    return `${loc}: ${msg}`;
+  };
+
+  if (Array.isArray(detail)) {
+    return detail
+      .filter((e): e is { loc?: unknown; msg?: unknown } => Boolean(e) && typeof e === "object")
+      .map(formatOne);
+  }
+
+  if (!detail || typeof detail !== "object") return [];
+  const d = detail as { errors?: Array<{ loc?: unknown; msg?: unknown }> };
+  if (!Array.isArray(d.errors)) return [];
+  return d.errors.map(formatOne);
+}
+
 function getApiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_URL ?? (typeof window !== "undefined" ? "" : "http://localhost:8000");
+  if (typeof window !== "undefined") {
+    return process.env.NEXT_PUBLIC_API_URL ?? "";
+  }
+  // Server components may reach the API on a different URL than the browser
+  // (e.g. Docker/LAN); API_URL is read at runtime, NEXT_PUBLIC_* at build time.
+  return process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 }
 
 function getBase(): string {
@@ -26,38 +67,43 @@ function getBase(): string {
   return base || "/api";
 }
 
-function buildUrl(path: string): string {
+/** Exported for tests. */
+export function buildUrl(path: string): string {
   const base = getBase();
   return path.startsWith("http") ? path : `${base.replace(/\/$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
+async function toApiError(res: Response): Promise<ApiError> {
+  const body = await res.json().catch(() => ({}));
+  const detail = (body as { detail?: unknown })?.detail;
+  const messages = formatApiErrors(detail);
+  const message =
+    typeof detail === "string"
+      ? detail
+      : messages.length > 0
+        ? messages.join("; ")
+        : detail && typeof detail === "object"
+          ? JSON.stringify(detail)
+          : res.statusText;
+  return new ApiError(message, res.status, detail);
 }
 
 async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const res = await fetch(buildUrl(path), {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
+  const headers = new Headers(options.headers);
+  if (options.body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const res = await fetch(buildUrl(path), { ...options, headers });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const detail = body?.detail;
-    const message =
-      typeof detail === "string"
-        ? detail
-        : detail && typeof detail === "object"
-          ? JSON.stringify(detail)
-          : res.statusText;
-    const err = new Error(message) as Error & { status: number; detail: unknown };
-    err.status = res.status;
-    err.detail = detail;
-    throw err;
+    throw await toApiError(res);
   }
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 async function requestUpload<T>(path: string, formData: FormData): Promise<T> {
@@ -66,13 +112,7 @@ async function requestUpload<T>(path: string, formData: FormData): Promise<T> {
     body: formData,
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const detail = body?.detail;
-    const message = typeof detail === "string" ? detail : res.statusText;
-    const err = new Error(message) as Error & { status: number; detail: unknown };
-    err.status = res.status;
-    err.detail = detail;
-    throw err;
+    throw await toApiError(res);
   }
   return res.json() as Promise<T>;
 }
@@ -137,6 +177,12 @@ export async function cancelJob(jobId: string): Promise<Job> {
 
 // --- Audio ---
 
+/**
+ * Name of the concatenated full-story WAV in the story's files list.
+ * Contract with the backend: lib/paths.py get_story_full_audio_path().
+ */
+export const STORY_FULL_AUDIO_FILENAME = "story_full.wav";
+
 export function getStoryFullAudioUrl(storyId: string): string {
   return `${getBase().replace(/\/$/, "")}/audio/stories/${encodeURIComponent(storyId)}/full.wav`;
 }
@@ -161,9 +207,8 @@ export async function uploadReferenceAudio(file: File): Promise<UploadResponse> 
 
 // --- Voices ---
 
-export async function listVoices(pool?: string): Promise<Voice[]> {
-  const qs = pool ? `?pool=${encodeURIComponent(pool)}` : "";
-  return request<Voice[]>(`/voices${qs}`);
+export async function listVoices(): Promise<Voice[]> {
+  return request<Voice[]>("/voices");
 }
 
 export async function getVoice(voiceId: string): Promise<Voice> {
