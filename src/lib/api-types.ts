@@ -1,92 +1,38 @@
-/** TypeScript types mirroring the TTS Storyteller API (lib/models.py). */
+/**
+ * Types for the TTS Storyteller API.
+ *
+ * `api-schema.d.ts` is GENERATED from the backend's OpenAPI spec — run
+ * `npm run codegen` after backend model changes. This file only re-exports
+ * (and where noted, tightens) the generated shapes; don't hand-write API
+ * types here.
+ */
 
+import type { components } from "./api-schema";
+
+type Schemas = components["schemas"];
+
+/** Backends supported by the API (the generated schema types this as plain string). */
 export type TtsBackend = "qwen" | "vibevoice";
 
-export interface Role {
-  roleId: number;
-  name: string;
-  notes: string | null;
-}
+/** Job lifecycle states (see backend services/jobs.py; schema types this as plain string). */
+export type JobStatus = "queued" | "running" | "succeeded" | "failed";
 
-export interface StoryLine {
-  id: number;
-  roleId: number;
-  line: string;
-  extra: string | null;
-  actorId: string | null;
-}
+export type Role = Schemas["Role"];
+export type StoryLine = Schemas["StoryLine"];
+export type StoryTemplate = Schemas["StoryTemplate"];
+export type StorySummary = Schemas["StorySummary"];
+export type ResolvedLine = Schemas["ResolvedLine"];
+export type GenerateRequest = Partial<Schemas["GenerateRequest"]>;
 
-export interface StoryTemplate {
-  id: string | null;
-  slug: string | null;
-  schemaVersion: 1;
-  title: string;
-  language: string;
-  defaultVoiceId: string;
-  roles: Role[];
-  casting: Record<string, string> | null;
-  lines: StoryLine[];
-}
+export type Job = Omit<Schemas["Job"], "status"> & { status: JobStatus };
 
-export interface StorySummary {
-  id: string | null;
-  slug: string;
-  title: string;
-}
-
-export interface ResolvedLine {
-  id: number;
-  roleId: number;
-  voiceId: string;
-  line: string;
-  extra: string | null;
-}
-
-export interface Voice {
-  id: string;
-  language: string;
-  instruction: string;
-  sample_text: string | null;
+export type Voice = Omit<Schemas["Voice"], "backend"> & { backend: TtsBackend };
+export type VoiceConfig = Omit<Schemas["VoiceConfig"], "backend"> & { backend: "qwen" };
+export type VoiceCloneConfig = Omit<Schemas["VoiceCloneConfig"], "backend"> & {
   backend: TtsBackend;
-  promptPath: string | null;
-  refAudioPath: string | null;
-}
+};
 
-export interface VoiceConfig {
-  id: string;
-  language: string;
-  instruction: string;
-  sample_text: string;
-  backend: "qwen";
-}
-
-export interface VoiceCloneConfig {
-  id: string;
-  language: string;
-  instruction: string;
-  ref_audio_url: string;
-  ref_text?: string | null;
-  backend: TtsBackend;
-}
-
-export interface GenerateRequest {
-  concat?: boolean;
-}
-
-export interface Job {
-  id: string;
-  type: string;
-  status: "queued" | "running" | "succeeded" | "failed";
-  storyId: string | null;
-  voiceId: string | null;
-  message: string | null;
-  outputPath: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-  requestParams: Record<string, unknown> | null;
-}
-
+/** POST /audio/upload returns a plain string map; field names documented here. */
 export interface UploadResponse {
   file_path: string;
   filename: string;

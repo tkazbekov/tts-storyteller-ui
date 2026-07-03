@@ -86,6 +86,23 @@ npm run build
 npm audit --omit=dev --audit-level=high
 ```
 
+### API type generation
+
+`src/lib/api-schema.d.ts` is generated from the backend's OpenAPI spec, and
+`src/lib/api-types.ts` re-exports named types from it. After backend model
+changes, regenerate:
+
+```bash
+npm run codegen
+```
+
+This reads `../tts-storyteller/docs/openapi.json` (assumes the backend repo is
+checked out next to this one). To generate from a running backend instead:
+
+```bash
+npx openapi-typescript http://localhost:8000/openapi.json -o src/lib/api-schema.d.ts
+```
+
 ## Typical workflow
 
 1. Start the backend with `./scripts/start.sh` from the `tts-storyteller` repo.
@@ -124,11 +141,13 @@ This UI is aligned with the current TTS Storyteller API routes:
 ## Repository layout
 
 ```text
-src/app/             Next.js App Router pages
-src/components/      UI components and client-side forms/actions
-src/components/ui/   shadcn-style primitives
-src/lib/api.ts       TTS Storyteller API client
-src/lib/api-types.ts TypeScript mirrors of API models
+src/app/              Next.js App Router pages
+src/components/       UI components and client-side forms/actions
+src/components/ui/    shadcn-style primitives
+src/hooks/            Shared client hooks (job polling)
+src/lib/api.ts        TTS Storyteller API client
+src/lib/api-schema.d.ts  GENERATED from the backend OpenAPI spec (npm run codegen)
+src/lib/api-types.ts  Named type re-exports over the generated schema
 ```
 
 ## License
