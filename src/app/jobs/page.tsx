@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ApiError, listActiveJobs, cancelJob } from "@/lib/api";
-import type { Job } from "@/lib/api-types";
+import { ApiError, cancelJob } from "@/lib/api";
+import { useActiveJobs } from "@/hooks/use-job-events";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,44 +17,20 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const POLL_INTERVAL_MS = 3000;
-
 export default function JobsPage() {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { jobs: activeJobs } = useActiveJobs(3000);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
-  const fetchJobs = useCallback(async () => {
-    try {
-      const list = await listActiveJobs();
-      setJobs(list);
-    } catch {
-      toast.error("Failed to load jobs");
-      setJobs([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchJobs();
-  }, [fetchJobs]);
-
-  // Poll while mounted (not gated on jobs.length: a job started elsewhere
-  // must show up here); skip ticks while the tab is hidden.
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") void fetchJobs();
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(t);
-  }, [fetchJobs]);
+  const loading = activeJobs === null;
+  const jobs = activeJobs ?? [];
 
   const handleCancel = async (jobId: string) => {
     setCancellingId(jobId);
     try {
       await cancelJob(jobId);
       toast.success("Job cancelled");
-      await fetchJobs();
+      // No refetch needed: the job stream delivers the terminal event and
+      // the row disappears (next poll tick covers degraded mode).
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         toast.error("Job is no longer active");

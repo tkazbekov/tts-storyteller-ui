@@ -13,7 +13,7 @@ import {
   getStoryAudioFileUrl,
   STORY_FULL_AUDIO_FILENAME,
 } from "@/lib/api";
-import { useJobPolling } from "@/hooks/use-job-polling";
+import { useJobWatcher } from "@/hooks/use-job-events";
 import { AudioPlayerWithDownload } from "@/components/audio-player-with-download";
 import type { ResolvedLine } from "@/lib/api-types";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,7 @@ export function StoryActions({ storyId }: Props) {
   const [generating, setGenerating] = useState(false);
   const [audioFiles, setAudioFiles] = useState<string[]>([]);
   const [hasFullAudio, setHasFullAudio] = useState(false);
-  const { start: startPolling } = useJobPolling();
+  const { start: startPolling } = useJobWatcher();
 
   const refreshAudioFiles = useCallback(async () => {
     try {

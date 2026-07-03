@@ -32,6 +32,16 @@ export type VoiceCloneConfig = Omit<Schemas["VoiceCloneConfig"], "backend"> & {
   backend: TtsBackend;
 };
 
+/**
+ * GET /jobs/events SSE payloads (endpoint is excluded from OpenAPI; contract
+ * documented in backend api/routes/jobs.py). `fallback` is emitted by the
+ * client-side manager when the stream persistently fails.
+ */
+export type JobStreamEvent =
+  | { type: "snapshot"; jobs: Job[] }
+  | { type: "job"; job: Job }
+  | { type: "fallback" };
+
 /** POST /audio/upload returns a plain string map; field names documented here. */
 export interface UploadResponse {
   file_path: string;

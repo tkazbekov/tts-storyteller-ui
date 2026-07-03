@@ -103,6 +103,17 @@ checked out next to this one). To generate from a running backend instead:
 npx openapi-typescript http://localhost:8000/openapi.json -o src/lib/api-schema.d.ts
 ```
 
+### Live job updates
+
+Job status streams over Server-Sent Events from `GET /jobs/events` (one shared
+connection per tab). By default this flows through the `/api` rewrite; the
+backend sends `Cache-Control: no-transform` so proxies don't buffer the
+stream. With `NEXT_PUBLIC_API_URL` set, the `EventSource` connects to the
+backend directly (its CORS already allows it). If the stream fails
+persistently — including against older backends without the endpoint — the UI
+silently degrades to the previous polling behavior for the rest of the page
+session.
+
 ## Typical workflow
 
 1. Start the backend with `./scripts/start.sh` from the `tts-storyteller` repo.
